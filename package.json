@@ -1,0 +1,19 @@
+{
+  "name": "ai-receptionist-platform",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Multi-tenant AI Receptionist platform (WhatsApp, Web Chat, future Voice) — monorepo root",
+  "workspaces": [
+    "apps/dashboard",
+    "apps/widget",
+    "packages/*"
+  ],
+  "scripts": {
+    "dashboard:dev": "npm run dev -w apps/dashboard",
+    "dashboard:build": "npm run build -w apps/dashboard",
+    "dashboard:lint": "npm run lint -w apps/dashboard"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

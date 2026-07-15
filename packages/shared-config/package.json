@@ -1,0 +1,6 @@
+{
+  "name": "@ai-receptionist/shared-config",
+  "private": true,
+  "version": "0.1.0",
+  "main": "./tsconfig.base.json"
+}
