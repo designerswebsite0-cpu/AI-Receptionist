@@ -84,38 +84,90 @@ silent gap.
 
 # Customer 360
 
-GET    /api/v1/customers
-POST   /api/v1/customers
-GET    /api/v1/customers/{id}
-PATCH  /api/v1/customers/{id}
-DELETE /api/v1/customers/{id}
+**Status: foundation implemented in Phase 2.** Nested under
+`/tenants/{tenant_id}/` for the same reason the Tenants section above is —
+tenant_id is resolved from the URL but verified against the caller's own
+membership before anything is authorized (`app.deps.get_current_membership`).
+This supersedes the flat `/api/v1/customers` paths originally sketched
+below; there is no cross-tenant customer listing.
 
-GET    /api/v1/customers/{id}/summary
-GET    /api/v1/customers/{id}/history
-GET    /api/v1/customers/{id}/preferences
-PATCH  /api/v1/customers/{id}/preferences
-GET    /api/v1/customers/{id}/timeline
+POST   /api/v1/tenants/{tenant_id}/customers
+GET    /api/v1/tenants/{tenant_id}/customers?search=&tag=&page=&page_size=
+GET    /api/v1/tenants/{tenant_id}/customers/{customer_id}
+PATCH  /api/v1/tenants/{tenant_id}/customers/{customer_id}
+POST   /api/v1/tenants/{tenant_id}/customers/{customer_id}/contacts
+GET    /api/v1/tenants/{tenant_id}/customers/{customer_id}/notes
+POST   /api/v1/tenants/{tenant_id}/customers/{customer_id}/notes
+POST   /api/v1/tenants/{tenant_id}/customers/{customer_id}/tags
+DELETE /api/v1/tenants/{tenant_id}/customers/{customer_id}/tags/{tag}
+
+Requires `customers.view` (read endpoints) / `customers.manage` (write
+endpoints) — currently unenforced while `RBAC_ENFORCEMENT_ENABLED=false`
+(rules.md §4), but every endpoint already declares the correct requirement
+so enforcement is a config flip, not a code change.
+
+Not yet implemented: `/summary` (AI-generated brief — Phase 4),
+`/history`/`/timeline` (derived from conversations + bookings — query
+directly for now, a dedicated aggregating endpoint can follow once Phase 7
+bookings exist), `DELETE /customers/{id}` (no hard-delete path yet; add
+with the data-retention work referenced in rules.md §19).
 
 ---
 
 # Conversations
 
-GET    /api/v1/conversations
-POST   /api/v1/conversations
-GET    /api/v1/conversations/{id}
-PATCH  /api/v1/conversations/{id}
-POST   /api/v1/conversations/{id}/close
-POST   /api/v1/conversations/{id}/assign
-POST   /api/v1/conversations/{id}/handoff
+**Status: foundation implemented in Phase 2.** Same tenant-scoped
+convention as Customers above — supersedes the flat paths originally
+sketched below.
+
+POST   /api/v1/tenants/{tenant_id}/conversations
+GET    /api/v1/tenants/{tenant_id}/conversations?status=&channel=&assigned_agent_id=&customer_id=&page=&page_size=
+GET    /api/v1/tenants/{tenant_id}/conversations/{conversation_id}
+PATCH  /api/v1/tenants/{tenant_id}/conversations/{conversation_id}
+POST   /api/v1/tenants/{tenant_id}/conversations/{conversation_id}/assign
+POST   /api/v1/tenants/{tenant_id}/conversations/{conversation_id}/status
+POST   /api/v1/tenants/{tenant_id}/conversations/{conversation_id}/close
+POST   /api/v1/tenants/{tenant_id}/conversations/{conversation_id}/state
+
+`status` (lifecycle/queue state — one of `open`, `waiting_for_guest`,
+`waiting_for_staff`, `ai_handling`, `human_handling`, `escalated`, `closed`,
+`blocked`) and `state` (dialogue state — one of `greeting`,
+`discovering_needs`, `collecting_information`, `recommending`, `booking`,
+`waiting`, `confirmation`, `upselling`, `support`, `escalation`, `closed`)
+are independent — see architecture.md §4.4 and product_decisions.md for
+why, and why `blocked` is retained from the original architecture spec
+alongside the 7 statuses the Phase 2 brief specified.
+
+`/handoff` from the original sketch is superseded by `/status` with
+`status=human_handling` (also flips `ai_active`/`human_active`
+accordingly) — one endpoint, not two overlapping ones.
+
+Requires `conversations.view` / `conversations.manage` (same
+currently-unenforced-by-default caveat as Customers above).
 
 ---
 
 # Messages
 
-GET    /api/v1/conversations/{id}/messages
-POST   /api/v1/conversations/{id}/messages
-POST   /api/v1/messages/send
-POST   /api/v1/messages/retry
+**Status: foundation implemented in Phase 2.** Nested under a conversation,
+not flat — supersedes the sketch below.
+
+GET    /api/v1/tenants/{tenant_id}/conversations/{conversation_id}/messages?page=&page_size=
+POST   /api/v1/tenants/{tenant_id}/conversations/{conversation_id}/messages
+POST   /api/v1/tenants/{tenant_id}/conversations/{conversation_id}/messages/{message_id}/read
+
+`POST .../messages` accepts an optional `external_message_id`; sending the
+same one twice returns the original message instead of creating a
+duplicate (rules.md §13 idempotency) — this is what a WhatsApp webhook
+retry (Phase 6) will rely on. Attachments are metadata-only right now
+(`storage_path` pointing at a private Supabase Storage object the caller
+already uploaded some other way) — there's no upload endpoint yet; that
+arrives with the Knowledge Intelligence Engine's storage plumbing (Phase 3).
+
+Flat `/api/v1/messages/send` and `/api/v1/messages/retry` from the original
+sketch are not implemented — retry logic is meaningless before Phase 6
+gives us a real provider whose deliveries can actually fail and need
+retrying.
 
 ---
 

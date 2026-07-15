@@ -5,6 +5,86 @@
 
 ---
 
+## 2026-07-16 — Phase 2: shared conversation foundation
+
+**Context:** Building the Phase 2 brief (customers, conversations,
+messages, conversation state engine, unified inbox APIs) on top of the
+verified Phase 1 foundation, against the real Supabase project connected
+the same day.
+
+### Two independent conversation states, not one
+
+The Phase 2 brief's `status` enum (open/waiting_for_guest/waiting_for_staff/
+ai_handling/human_handling/escalated/closed) and architecture.md's
+original AI_ACTIVE/HUMAN_ACTIVE/AI_ASSIST/WAITING_FOR_CUSTOMER/RESOLVED/
+BLOCKED vocabulary describe the same conceptual slot on a conversation.
+Resolved by adopting the Phase 2 list as `conversations.status` (it's the
+more recent, more detailed instruction), retaining `blocked` as an 8th
+value since rules.md requires a way to halt automated processing entirely
+and nothing in the new brief covers that need, and capturing the old
+AI_ASSIST nuance (AI drafts, human sends) via the existing
+`ai_active`/`human_active` boolean pair instead of a 9th status value.
+Separately, the Phase 2 brief's own "Conversation State Foundation"
+section (Greeting → Closed, 11 states) is a genuinely different concept —
+dialogue/reasoning state, stored as `conversations.current_state` — and
+was reconciled with the near-identical but not-quite-matching list in
+functions.md's AI Intelligence Layer by adopting the Phase 2 brief's exact
+11-state list as canonical everywhere (functions.md's conversation-state
+section and architecture.md §4.4 both updated to match).
+
+### Tenant-scoped URL convention extended, not re-decided
+
+Phase 1 already established `/api/v1/tenants/{tenant_id}/...` with
+URL-supplied-but-verified tenant_id for tenant member management. api.md's
+original (pre-Phase-1) sketch had flat `/api/v1/customers`,
+`/api/v1/conversations` paths with no tenant scoping mechanism at all.
+Rather than inventing a second convention, Phase 2 extends the existing
+one to customers/conversations/messages — one pattern, one place
+(`app.deps.get_current_membership`) where tenant trust is established.
+
+### Customer identity resolution: one contact table, not three
+
+"Multiple phone numbers, emails, WhatsApp identity" could have been three
+near-identical tables. Built as one `customer_contacts` table with a
+`contact_type` discriminator and a `UNIQUE(tenant_id, contact_type, value)`
+constraint instead — this is also exactly the shape identity resolution
+needs (`find_customer_by_contact`), and adding a new contact type later
+(e.g. an Instagram handle) needs no schema change.
+
+### "Previous stays" / "communication history" are derived, not stored
+
+Both were listed as customer fields in the brief. Neither gets a column:
+previous stays will be a query against `bookings` (Phase 7, doesn't exist
+yet) and communication history a query against `conversations`/`messages`
+(this phase), both filtered by `customer_id`. Storing either as a
+duplicated column/table would drift from the source of truth immediately.
+
+### Tests are written but skip locally by design — verified another way
+
+`tests/test_customers.py` and `tests/test_conversations.py` use the same
+`db_engine` fixture as Phase 1's `test_tenant_isolation.py`, which calls
+`Base.metadata.drop_all` in teardown. Running pytest with `DATABASE_URL`
+pointed at the now-connected real Supabase project would **drop every
+table in it** — unacceptable. So these tests keep skipping locally (same
+as Phase 1) and are meant to run for real in CI's disposable Postgres
+service container. To still get real verification before calling Phase 2
+done, ran a one-off script exercising the full customer → conversation →
+message → dialogue-state-transition → close lifecycle directly against
+the real database, then surgically deleted only the rows it created
+(no `drop_all`) — confirmed working end-to-end, including cascade
+deletes and idempotent message sends.
+
+### RBAC extended, bypass unchanged
+
+Added `customers.view`/`customers.manage`/`conversations.view`/
+`conversations.manage` to the permission matrix and seeded them onto the
+5 existing system roles via a new migration (`0005`) rather than editing
+`0001` (already applied to the real database — migrations must stay
+additive). `RBAC_ENFORCEMENT_ENABLED` is still `false`, so these are
+declared-but-unenforced for now, same as Phase 1's permissions.
+
+---
+
 ## 2026-07-15 — Resort business pivot, functions.md, temporary RBAC bypass, infra defaults
 
 **Context:** Phase 1 verified complete. The user provided `functions.md`

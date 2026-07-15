@@ -353,12 +353,14 @@ Extracts:
 ## Conversation State
 - get_conversation_state()
 - update_conversation_state()
-States include:
+States (canonical list — matches the Phase 2 conversation state engine,
+`conversations.current_state` in database.md, and architecture.md §4.4):
 - Greeting
-- Information Gathering
-- Recommendation
+- Discovering Needs
+- Collecting Information
+- Recommending
 - Booking
-- Payment
+- Waiting
 - Confirmation
 - Upselling
 - Support

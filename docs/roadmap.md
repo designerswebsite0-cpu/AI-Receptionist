@@ -79,18 +79,49 @@ affected. See rules.md §4 and product_decisions.md. Must be flipped back to
 
 # Phase 2 — Database & Customer360
 
-Build
+Status: **Implemented and verified** (2026-07-16) — schema, RLS, and
+service logic tested end-to-end against the real Supabase project (raw SQL
+verification + a scripted smoke test exercising the full customer →
+conversation → message → dialogue-state → close lifecycle, with surgical
+cleanup). Not yet exercised through the dashboard UI (no inbox frontend
+yet — deliberately out of scope, see below) or through `pytest` directly
+against this project (the test suite's teardown does `DROP TABLE`, which
+would be destructive against a real project — see product_decisions.md;
+the same tests run for real in CI against a disposable Postgres).
 
-- Database schema
-- Customer360
-- Customer timelines
-- Preferences
-- AI summaries
-- Customer scoring
-- Staff notes
+Actually built (broader than the original bullet list, per the detailed
+Phase 2 brief that superseded it — see product_decisions.md):
+
+- [x] Customer 360 foundation — customers, customer_contacts (unified
+  phone/email/WhatsApp identity resolution), customer_notes, customer_tags
+- [x] Conversations — channel-neutral, with independent lifecycle `status`
+  and dialogue `current_state`
+- [x] Messages — channel-neutral, with idempotent send and delivery/read
+  tracking
+- [x] Conversation state engine — reusable, audited (conversation_state_events)
+- [x] Unified inbox backend APIs — list/get/search/filter/paginate
+  conversations, assign, change status, change dialogue state, send
+  message, mark read
+- [x] RLS on every new table
+- [x] RBAC permissions extended (customers.*, conversations.*) — same
+  temporary bypass as Phase 1 applies
 
 Deliverable:
-Unified customer memory shared across all channels.
+Unified customer + conversation memory shared across all channels — the
+foundation every future channel adapter (WhatsApp, web widget) and the AI
+Orchestration Engine build on, without any of them existing yet.
+
+Known Phase 2 tech debt (tracked, not silent):
+
+- No dashboard inbox UI yet (deliberately out of scope — spec called for
+  backend APIs only, "basic testing" not a UI).
+- Attachments are metadata-only; no upload endpoint until Phase 3 wires
+  Supabase Storage for the Knowledge Intelligence Engine.
+- `/customers/{id}/summary`, `/history`, `/timeline` are not implemented —
+  they need the AI Orchestration Engine (Phase 4) and bookings (Phase 7)
+  respectively to have real data to summarize/aggregate.
+- No hard-delete endpoint for customers yet — pairs with the data-retention
+  policy work in rules.md §19, not built standalone.
 
 ---
 

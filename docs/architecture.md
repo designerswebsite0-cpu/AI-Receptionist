@@ -1055,6 +1055,42 @@ until Upstash Redis lands in Phase 3+.
 Phase 2 --- Customer identities, Customer 360, conversations, messages,
 and realtime events.
 
+Phase 2 implementation notes (added once built, kept in sync with code):
+
+Realtime events are not implemented yet — Phase 2 built the durable
+storage and REST APIs (list/get/search/filter/paginate conversations,
+send message, mark read, assign, change status/state) that a Supabase
+Realtime layer will subscribe to later; the dashboard inbox UI and
+Realtime wiring are follow-on work, not part of this phase's brief.
+
+Every tenant-owned resource added this phase (customers, conversations,
+messages, and their child tables) follows the same URL convention Phase 1
+established for tenant members: nested under
+`/api/v1/tenants/{tenant_id}/...`, with tenant_id resolved from the URL but
+verified against the caller's own membership before use
+(`app.deps.get_current_membership`) — never trusted blindly. This
+supersedes the flat `/api/v1/customers`, `/api/v1/conversations` sketches
+in an earlier api.md draft.
+
+A conversation carries two independent pieces of state, not one:
+`status` is the lifecycle/queue state a staff inbox filters by (`open`,
+`waiting_for_guest`, `waiting_for_staff`, `ai_handling`, `human_handling`,
+`escalated`, `closed`, `blocked`); `current_state` is where the AI
+reasoning pipeline (§4.4 above) is in the conversation (`greeting` through
+`closed`, matching docs/functions.md's Conversation State list). The
+original architecture draft's AI_ACTIVE/HUMAN_ACTIVE/AI_ASSIST/
+WAITING_FOR_CUSTOMER/RESOLVED/BLOCKED vocabulary is superseded by `status`
+plus the independent `ai_active`/`human_active` boolean pair — the flags
+capture AI_ASSIST-style overlap (AI drafts, human sends) that a single
+enum can't, without needing a ninth status value. `BLOCKED` is the one
+value carried over unchanged, since rules.md requires a way to halt
+automated processing entirely and the Phase 2 brief didn't restate it.
+
+Message attachments are metadata rows only this phase (a `storage_path`
+into a private Supabase Storage bucket the caller populated some other
+way) — there is no upload endpoint until Phase 3 wires real Storage
+handling for the Knowledge Intelligence Engine.
+
 Phase 3 --- Knowledge Intelligence Engine ingestion, processing worker,
 embeddings, hybrid retrieval, and knowledge dashboard.
 

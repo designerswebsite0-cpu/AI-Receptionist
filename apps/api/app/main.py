@@ -3,6 +3,8 @@ from starlette.middleware.cors import CORSMiddleware
 
 from app.auth.router import router as auth_router
 from app.config import get_settings
+from app.conversations.router import router as conversations_router
+from app.customers.router import router as customers_router
 from app.errors import register_exception_handlers
 from app.health.router import router as health_router
 from app.logging import configure_logging
@@ -32,3 +34,5 @@ register_exception_handlers(app)
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(tenants_router)
+app.include_router(customers_router)
+app.include_router(conversations_router)
