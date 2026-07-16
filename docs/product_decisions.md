@@ -5,6 +5,112 @@
 
 ---
 
+## 2026-07-16 — Phase 2.5: single-resort architecture refactor (removed multi-tenancy)
+
+**Context:** The business model changed — instead of one shared application
+serving multiple resorts, every resort now gets its own fully isolated
+deployment (own Supabase project/database, own Railway backend, own Vercel
+frontend). The entire multi-tenant system built in Phase 1 (and extended in
+Phase 2) became unnecessary and was ordered removed before Phase 3 begins.
+
+**Pre-migration data check (why this was low-risk):** before writing any
+migration, queried the live database directly: 1 tenant, 1 tenant_member, 1
+user, 0 customers/conversations/messages, 8 audit_log rows. There was
+essentially nothing to lose or reconcile — this shaped the decision to do a
+clean, irreversible-by-design migration rather than build elaborate data-
+preservation machinery for data that didn't exist.
+
+### Migration structure: 3 new migrations, none of the old ones touched
+
+`0007` (create `resort_settings`), `0008` (drop all tenant-referencing RLS
+policies, then `tenant_id` columns/constraints/indexes from every business
+table, then the tenant system tables themselves), `0009` (new
+authenticated-only RLS policies). Migrations `0001`-`0006` were left
+completely untouched — editing an already-applied migration's DDL would
+desync anyone re-running the chain on a fresh database from what actually
+ran against the live one. This does mean a fresh database briefly builds
+the tenant system before Phase 2.5 tears it down again — accepted as a
+harmless one-time cost of keeping migration history honest, not something
+worth rewriting history to avoid.
+
+**Real bug caught mid-migration:** the first attempt at migration `0008`
+failed with `DependentObjectsStillExist` trying to `DROP TABLE
+tenant_members` — policies on `tenants`/`tenant_settings`/`tenant_roles`
+referenced `tenant_members` in their `USING` clause (the shared membership
+subquery from migration `0002`) even though they weren't defined on
+`tenant_members` itself. Postgres tracks that as a real dependency. Fixed
+by dropping every policy that referenced the tenant system — including
+ones defined on tables that were about to be dropped anyway — before
+dropping any table. Alembic's transactional DDL meant the failed attempt
+rolled back cleanly with zero side effects; this is exactly why we don't
+skip transactional safety for "just a migration."
+
+### `resort_settings` singleton enforced at the database level
+
+A `singleton boolean NOT NULL DEFAULT true` column under a `UNIQUE`
+constraint plus `CHECK (singleton = true)` guarantees at most one row can
+ever exist — not just an application-layer check before insert (which is
+also there, for a clean error message, but the DB constraint is the real
+guarantee). This is the standard "singleton table" Postgres pattern.
+
+### RLS: authenticated-only, not "no RLS"
+
+Replaced every tenant-membership-subquery policy with `auth.uid() IS NOT
+NULL` — RLS stays as defense-in-depth for any future direct-Postgres access
+path (Realtime, future connectors), it just no longer needs to answer "which
+tenant" since there's only ever one resort's data per database.
+`audit_logs` keeps its no-INSERT-policy pattern from Phase 1 (readable by
+authenticated users, writable only by the backend's service_role
+connection, which bypasses RLS).
+
+### `audit_logs` gained `before_state`/`after_state`/`correlation_id`
+
+Not part of removing tenant_id, but bundled into migration `0008` since the
+table was already being altered. The Phase 2.5 brief listed these as
+audit-log requirements; `correlation_id` is populated automatically from
+the existing per-request context var (`app.logging.correlation_id_var`) so
+no call site needs to pass it manually. `before_state`/`after_state` are
+populated at the "update" call sites where the old value was already cheap
+to capture (customer update, conversation status/state change,
+resort_settings update) — not retrofitted everywhere, since most actions
+(create, add tag, add note) don't have a meaningful "before" state.
+
+### Access model: authentication only, not "RBAC bypassed"
+
+Phase 1's temporary `RBAC_ENFORCEMENT_ENABLED` flag is gone, not set to
+some new default — the role/permission system it gated doesn't exist
+anymore (`app/roles/`, `app/tenants/` deleted; `CurrentMembership`,
+`get_current_membership`, `require_permission` removed from `app.deps`).
+`app.deps.get_current_user` — authentication only — is now the sole access
+check any endpoint depends on. This is a stronger, more final decision than
+the Phase 1 bypass: there is no flag left to flip back on. Reintroducing
+role distinctions later means deliberately rebuilding them, not toggling a
+switch.
+
+### Verification approach: same "surgical live smoke test" pattern as Phase 2
+
+`pytest`'s DB-gated tests (customers/conversations/resort_settings) still
+skip locally, for the identical reason as Phase 2: their fixture teardown
+calls `Base.metadata.drop_all`, which would destroy the connected live
+Supabase project's schema. Verified the actual migration and service-layer
+correctness instead via: (1) direct SQL inspection of the resulting schema/
+RLS policies, (2) a scripted smoke test creating a resort_settings row +
+customer + conversation + message directly against the live database and
+confirming the singleton constraint fires correctly, followed by surgical
+(non-`drop_all`) cleanup. Both approaches together give real confidence
+without risking the connected project.
+
+### Dashboard: resort setup replaces tenant creation
+
+`CreateTenantForm` and the `/api/tenants` proxy route were deleted, not
+just hidden. `GET /api/v1/auth/me` now returns `resort_configured: boolean`
+instead of a memberships array; the dashboard home page checks that flag
+and shows `ResortSetupForm` (posts to a new `/api/v1/resort/settings` proxy
+route) until it's true, then a plain welcome view. No tenant-switcher
+concept ever existed to remove beyond that.
+
+---
+
 ## 2026-07-16 — Phase 2: shared conversation foundation
 
 **Context:** Building the Phase 2 brief (customers, conversations,

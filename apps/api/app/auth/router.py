@@ -12,7 +12,7 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.errors import UnauthorizedError
 from app.rate_limit import enforce_rate_limit
-from app.tenants.service import list_my_tenants
+from app.resort.repository import get_resort_settings
 from app.users.models import User
 from app.users.service import upsert_user_from_identity
 
@@ -32,7 +32,6 @@ async def login(
     await upsert_user_from_identity(db, identity)
     await record_audit_event(
         db,
-        tenant_id=None,
         actor_user_id=uuid.UUID(identity.user_id),
         action="auth.login",
         resource_type="user",
@@ -79,7 +78,6 @@ async def logout(
     await service.logout(token)
     await record_audit_event(
         db,
-        tenant_id=None,
         actor_user_id=uuid.UUID(identity.user_id),
         action="auth.logout",
         resource_type="user",
@@ -93,11 +91,16 @@ async def logout(
 
 @router.get("/me")
 async def me(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> dict:
-    memberships = await list_my_tenants(db, user.id)
+    """No memberships/roles anymore (single-resort refactor) — a verified
+    session is sufficient for full access. `resort_configured` tells the
+    dashboard whether to show first-run resort setup or the normal
+    dashboard, without a second round trip.
+    """
+    resort_settings = await get_resort_settings(db)
     return success(
         {
             "user_id": str(user.id),
             "email": user.email,
-            "memberships": [{**m, "tenant_id": str(m["tenant_id"])} for m in memberships],
+            "resort_configured": resort_settings is not None,
         }
     )

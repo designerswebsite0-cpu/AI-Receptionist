@@ -5,12 +5,12 @@ from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.common.models import TenantScopedMixin, TimestampMixin, UUIDPrimaryKeyMixin
+from app.common.models import TimestampMixin, UUIDPrimaryKeyMixin
 from app.conversations.constants import CHANNELS, DIALOGUE_STATES, PRIORITIES, STATE_CHANGED_BY, STATUSES
 from app.database import Base
 
 
-class Conversation(Base, UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin):
+class Conversation(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "conversations"
     __table_args__ = (
         CheckConstraint(f"channel IN {CHANNELS}", name="ck_conversations_channel"),
@@ -39,7 +39,7 @@ class Conversation(Base, UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin)
     conversation_metadata: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
 
-class ConversationStateEvent(Base, UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin):
+class ConversationStateEvent(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """Audit trail of dialogue-state transitions — database.md principle
     that every table stay auditable. No transition-graph validation yet
     (any state to any state is allowed); that's a Phase 4 AI Orchestration

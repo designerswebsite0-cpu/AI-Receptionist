@@ -15,38 +15,34 @@ from app.customers.schemas import (
     TagCreateRequest,
 )
 from app.database import get_db
-from app.deps import CurrentMembership
-from app.roles.permissions import Permission, require_permission
+from app.deps import get_current_user
+from app.users.models import User
 
-router = APIRouter(prefix="/api/v1/tenants/{tenant_id}/customers", tags=["customers"])
+router = APIRouter(prefix="/api/v1/customers", tags=["customers"])
 
 
 @router.post("")
 async def create_customer(
-    tenant_id: uuid.UUID,
     body: CustomerCreateRequest,
-    membership: CurrentMembership = Depends(require_permission(Permission.CUSTOMERS_MANAGE)),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    customer = await service.create_customer(
-        db, tenant_id=tenant_id, body=body, actor_user_id=membership.user_id
-    )
+    customer = await service.create_customer(db, body=body, actor_user_id=user.id)
     return success(CustomerOut.model_validate(customer).model_dump(mode="json"))
 
 
 @router.get("")
 async def list_customers(
-    tenant_id: uuid.UUID,
     search: str | None = Query(default=None),
     tag: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
-    membership: CurrentMembership = Depends(require_permission(Permission.CUSTOMERS_VIEW)),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     params = PageParams(page=page, page_size=page_size)
     customers, total = await repository.search_customers(
-        db, tenant_id, search=search, tag=tag, offset=params.offset, limit=params.page_size
+        db, search=search, tag=tag, offset=params.offset, limit=params.page_size
     )
     return success(
         {
@@ -58,14 +54,13 @@ async def list_customers(
 
 @router.get("/{customer_id}")
 async def get_customer(
-    tenant_id: uuid.UUID,
     customer_id: uuid.UUID,
-    membership: CurrentMembership = Depends(require_permission(Permission.CUSTOMERS_VIEW)),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    customer = await service.get_customer_or_404(db, tenant_id, customer_id)
-    contacts = await repository.list_contacts(db, tenant_id, customer_id)
-    tags = await repository.list_tags(db, tenant_id, customer_id)
+    customer = await service.get_customer_or_404(db, customer_id)
+    contacts = await repository.list_contacts(db, customer_id)
+    tags = await repository.list_tags(db, customer_id)
     payload = CustomerOut.model_validate(customer).model_dump(mode="json")
     payload["contacts"] = [
         {
@@ -83,29 +78,23 @@ async def get_customer(
 
 @router.patch("/{customer_id}")
 async def update_customer(
-    tenant_id: uuid.UUID,
     customer_id: uuid.UUID,
     body: CustomerUpdateRequest,
-    membership: CurrentMembership = Depends(require_permission(Permission.CUSTOMERS_MANAGE)),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    customer = await service.update_customer(
-        db, tenant_id=tenant_id, customer_id=customer_id, body=body, actor_user_id=membership.user_id
-    )
+    customer = await service.update_customer(db, customer_id=customer_id, body=body, actor_user_id=user.id)
     return success(CustomerOut.model_validate(customer).model_dump(mode="json"))
 
 
 @router.post("/{customer_id}/contacts")
 async def add_contact(
-    tenant_id: uuid.UUID,
     customer_id: uuid.UUID,
     body: ContactIn,
-    membership: CurrentMembership = Depends(require_permission(Permission.CUSTOMERS_MANAGE)),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    contact = await service.add_contact(
-        db, tenant_id=tenant_id, customer_id=customer_id, body=body, actor_user_id=membership.user_id
-    )
+    contact = await service.add_contact(db, customer_id=customer_id, body=body, actor_user_id=user.id)
     return success(
         {
             "id": str(contact.id),
@@ -119,12 +108,11 @@ async def add_contact(
 
 @router.get("/{customer_id}/notes")
 async def list_notes(
-    tenant_id: uuid.UUID,
     customer_id: uuid.UUID,
-    membership: CurrentMembership = Depends(require_permission(Permission.CUSTOMERS_VIEW)),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    notes = await repository.list_notes(db, tenant_id, customer_id)
+    notes = await repository.list_notes(db, customer_id)
     return success(
         [
             {
@@ -140,41 +128,32 @@ async def list_notes(
 
 @router.post("/{customer_id}/notes")
 async def add_note(
-    tenant_id: uuid.UUID,
     customer_id: uuid.UUID,
     body: NoteCreateRequest,
-    membership: CurrentMembership = Depends(require_permission(Permission.CUSTOMERS_MANAGE)),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    note = await service.add_note(
-        db, tenant_id=tenant_id, customer_id=customer_id, note=body.note, actor_user_id=membership.user_id
-    )
+    note = await service.add_note(db, customer_id=customer_id, note=body.note, actor_user_id=user.id)
     return success({"id": str(note.id), "note": note.note, "created_at": note.created_at.isoformat()})
 
 
 @router.post("/{customer_id}/tags")
 async def add_tag(
-    tenant_id: uuid.UUID,
     customer_id: uuid.UUID,
     body: TagCreateRequest,
-    membership: CurrentMembership = Depends(require_permission(Permission.CUSTOMERS_MANAGE)),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    tag = await service.add_tag(
-        db, tenant_id=tenant_id, customer_id=customer_id, tag=body.tag, actor_user_id=membership.user_id
-    )
+    tag = await service.add_tag(db, customer_id=customer_id, tag=body.tag, actor_user_id=user.id)
     return success({"id": str(tag.id), "tag": tag.tag})
 
 
 @router.delete("/{customer_id}/tags/{tag}")
 async def remove_tag(
-    tenant_id: uuid.UUID,
     customer_id: uuid.UUID,
     tag: str,
-    membership: CurrentMembership = Depends(require_permission(Permission.CUSTOMERS_MANAGE)),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    await service.remove_tag(
-        db, tenant_id=tenant_id, customer_id=customer_id, tag=tag, actor_user_id=membership.user_id
-    )
+    await service.remove_tag(db, customer_id=customer_id, tag=tag, actor_user_id=user.id)
     return success({"removed": True})

@@ -8,7 +8,6 @@ from typing import Any
 correlation_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "correlation_id", default=None
 )
-tenant_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("tenant_id", default=None)
 user_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar("user_id", default=None)
 
 # Fields that must never reach the logs, even if accidentally passed in `extra`.
@@ -32,7 +31,6 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
             "correlation_id": correlation_id_var.get(),
-            "tenant_id": tenant_id_var.get(),
             "user_id": user_id_var.get(),
         }
         for key, value in record.__dict__.items():

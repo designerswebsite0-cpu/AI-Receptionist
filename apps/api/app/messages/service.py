@@ -12,17 +12,12 @@ from app.messages.schemas import MessageCreateRequest
 
 
 async def send_message(
-    db: AsyncSession,
-    *,
-    tenant_id: uuid.UUID,
-    conversation_id: uuid.UUID,
-    body: MessageCreateRequest,
-    actor_user_id: uuid.UUID | None,
+    db: AsyncSession, *, conversation_id: uuid.UUID, body: MessageCreateRequest, actor_user_id: uuid.UUID | None
 ) -> Message:
-    conversation = await get_conversation_or_404(db, tenant_id, conversation_id)
+    conversation = await get_conversation_or_404(db, conversation_id)
 
     if body.external_message_id:
-        existing = await repository.find_by_external_id(db, tenant_id, body.external_message_id)
+        existing = await repository.find_by_external_id(db, body.external_message_id)
         if existing is not None:
             # Idempotent replay (rules.md §13): return the already-recorded
             # message instead of creating a duplicate.
@@ -30,7 +25,6 @@ async def send_message(
 
     direction = "inbound" if body.sender_type == "customer" else "outbound"
     message = Message(
-        tenant_id=tenant_id,
         conversation_id=conversation_id,
         direction=direction,
         sender_type=body.sender_type,
@@ -47,7 +41,6 @@ async def send_message(
     for attachment in body.attachments:
         db.add(
             MessageAttachment(
-                tenant_id=tenant_id,
                 message_id=message.id,
                 attachment_type=attachment.attachment_type,
                 storage_path=attachment.storage_path,
@@ -61,7 +54,6 @@ async def send_message(
 
     await record_audit_event(
         db,
-        tenant_id=tenant_id,
         actor_user_id=actor_user_id,
         action="message.sent",
         resource_type="message",
@@ -69,13 +61,11 @@ async def send_message(
         metadata={"conversation_id": str(conversation_id), "sender_type": body.sender_type},
     )
     await db.commit()
-    return await repository.get_message(db, tenant_id, message.id)
+    return await repository.get_message(db, message.id)
 
 
-async def mark_read(
-    db: AsyncSession, *, tenant_id: uuid.UUID, message_id: uuid.UUID, actor_user_id: uuid.UUID | None
-) -> Message:
-    message = await repository.get_message(db, tenant_id, message_id)
+async def mark_read(db: AsyncSession, *, message_id: uuid.UUID, actor_user_id: uuid.UUID | None) -> Message:
+    message = await repository.get_message(db, message_id)
     if message is None:
         raise NotFoundError("Message not found")
     if message.read_at is not None:
@@ -84,7 +74,6 @@ async def mark_read(
     message.read_at = datetime.now(UTC)
     await record_audit_event(
         db,
-        tenant_id=tenant_id,
         actor_user_id=actor_user_id,
         action="message.read",
         resource_type="message",

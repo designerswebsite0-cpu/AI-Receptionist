@@ -4,14 +4,18 @@ from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Numeric, String, Un
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.common.models import SoftDeleteMixin, TenantScopedMixin, TimestampMixin, UUIDPrimaryKeyMixin
+from app.common.models import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
 from app.database import Base
 
 CONTACT_TYPES = ("phone", "email", "whatsapp")
 
 
-class Customer(Base, UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, SoftDeleteMixin):
+class Customer(Base, UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     """Cross-channel guest identity — the Customer 360 foundation.
+
+    Single-resort deployment (product_decisions.md): no tenant_id — this
+    database serves exactly one resort, so every row here already belongs
+    to it implicitly.
 
     Structure only this phase (per roadmap.md Phase 2): `preferences` and
     `resort_preferences` are free-form JSONB buckets rather than normalized
@@ -34,16 +38,16 @@ class Customer(Base, UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin, Sof
     resort_preferences: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
 
-class CustomerContact(Base, UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin):
+class CustomerContact(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """A phone/email/WhatsApp identity resolving to one customer.
 
-    Unique per (tenant, type, value) so identity resolution is unambiguous
-    within a tenant — architecture.md §4.2's "one customer profile" rule.
+    Unique per (contact_type, value) — single-resort, so this is globally
+    unique within the deployment, not scoped per tenant anymore.
     """
 
     __tablename__ = "customer_contacts"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "contact_type", "value", name="uq_customer_contacts_tenant_type_value"),
+        UniqueConstraint("contact_type", "value", name="uq_customer_contacts_type_value"),
         CheckConstraint("contact_type IN ('phone', 'email', 'whatsapp')", name="ck_customer_contacts_type"),
     )
 
@@ -56,7 +60,7 @@ class CustomerContact(Base, UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMix
     verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
-class CustomerNote(Base, UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin):
+class CustomerNote(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """A staff-authored note — a verified, attributed fact per rules.md §6,
     never an AI inference (those arrive in a later phase with their own
     source/confidence tracking, kept structurally separate)."""
@@ -72,7 +76,7 @@ class CustomerNote(Base, UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin)
     note: Mapped[str] = mapped_column(String(4000), nullable=False)
 
 
-class CustomerTag(Base, UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin):
+class CustomerTag(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "customer_tags"
     __table_args__ = (UniqueConstraint("customer_id", "tag", name="uq_customer_tags_customer_tag"),)
 

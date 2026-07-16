@@ -5,13 +5,19 @@
 
 ## Vision
 
-Build a production-grade, multi-tenant AI Receptionist platform that unifies:
+Build a production-grade AI Receptionist that unifies:
 
 - WhatsApp
 - Website Live Chat
 - AI Voice Calls
 
 Customers should experience one intelligent receptionist regardless of the channel they use.
+
+**Architecture note (Phase 2.5, see roadmap.md):** the project is a reusable
+single-resort deployment template, not a multi-tenant SaaS. Each resort
+receives its own isolated deployment and database. Hosting patterns, Docker
+configuration, and code structure may be reused across resorts; business
+data and deployment environments are fully separate.
 
 ---
 
@@ -31,7 +37,7 @@ sensible escalation — never inventing availability, prices, or policy.
 
 The concrete business tool catalog for this vertical lives in
 [functions.md](functions.md); every architecture decision here must remain
-generic enough that a future non-resort tenant only needs a different
+generic enough that a future non-resort deployment only needs a different
 `functions.md` and knowledge base, not a different platform.
 
 Active channels: **WhatsApp** and **Website Chat** only. Voice remains a
@@ -50,7 +56,7 @@ The platform should:
 - Handle customer support
 - Personalize every interaction
 - Work alongside human staff
-- Scale across multiple businesses
+- Be reusable across resorts, one isolated deployment per resort
 - Be secure by default
 
 ---
@@ -136,14 +142,11 @@ Future voice support should provide:
 
 # Human Handoff
 
-Conversation modes:
-
-- AI_ACTIVE
-- HUMAN_ACTIVE
-- AI_ASSIST
-- WAITING_FOR_CUSTOMER
-- RESOLVED
-- BLOCKED
+Conversation lifecycle statuses (see database.md/api.md for the canonical
+list): `open`, `waiting_for_guest`, `waiting_for_staff`, `ai_handling`,
+`human_handling`, `escalated`, `closed`, `blocked`. The `ai_active`/
+`human_active` flags independently capture AI-assist-style overlap (AI
+drafts, human sends).
 
 Humans and AI must collaborate seamlessly.
 
@@ -189,7 +192,7 @@ Current target scale:
 Architecture goals:
 
 - Modular monolith
-- Multi-tenant
+- Single-resort per deployment (reusable template, not shared multi-tenant SaaS)
 - API-first
 - AI-first
 - Secure by default

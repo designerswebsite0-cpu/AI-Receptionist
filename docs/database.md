@@ -3,7 +3,7 @@
 
 > Status: Living Database Specification
 > Database: PostgreSQL (Supabase)
-> Architecture: Multi-Tenant SaaS
+> Architecture: Single-resort deployment template (Phase 2.5) — one database per resort, not shared multi-tenant SaaS
 > Shared By: Chat + Calls + Customer360 + Knowledge Intelligence Engine (KIE)
 
 ---
@@ -14,7 +14,7 @@ The database is the single source of truth for the platform.
 
 Design Principles:
 
-- Multi-tenant
+- Single-resort per deployment (no tenant_id — see §3)
 - UUID primary keys
 - Row Level Security (RLS)
 - Highly normalized
@@ -27,7 +27,7 @@ Design Principles:
 
 # 2. Core Database Domains
 
-- Tenant
+- Resort Configuration
 - Authentication
 - Customer360
 - Conversations
@@ -42,17 +42,28 @@ Design Principles:
 
 ---
 
-# 3. Tenant Module
+# 3. Resort Configuration Module
 
-Tables
+**Status: implemented (Phase 2.5).** Replaces the earlier multi-tenant
+`tenants`/`tenant_settings`/`tenant_members`/`tenant_roles`/`tenant_permissions`
+tables, all removed in migration `0008`. This deployment serves exactly one
+resort, so there is no tenant_id anywhere in the schema and no per-row
+ownership to enforce — see product_decisions.md for the full rationale.
 
-- tenants
-- tenant_settings
-- tenant_members
-- tenant_roles
-- tenant_permissions
+Tables (implemented)
 
-Every table references tenant_id.
+- resort_settings — exactly one row per deployment, enforced by a
+  `singleton` boolean under a UNIQUE constraint (not just an application
+  check): resort_name, legal_name, description, address/city/state/
+  country/postal_code, phone/email/whatsapp, timezone, currency,
+  default_language, check_in_time/check_out_time, logo_url,
+  primary_brand_color/secondary_brand_color, website_url, settings_metadata
+  (JSONB)
+
+Access model: every authenticated application user has full access (no
+roles/permissions table — see rules.md §4). `users` (below) still exists as
+the profile mirror of Supabase `auth.users`, just without any
+membership/role join table pointing at it.
 
 ---
 
@@ -69,8 +80,9 @@ Tables (implemented)
   `resort_preferences`) rather than many single-purpose columns, since the
   shape of that data isn't settled until the AI memory layer exists
 - customer_contacts — unified phone/email/WhatsApp identity table, unique
-  per (tenant, contact_type, value); this is how "one customer profile
-  across channels" (architecture.md §4.2) actually resolves
+  per (contact_type, value) — globally unique within this deployment's one
+  resort; this is how "one customer profile across channels"
+  (architecture.md §4.2) actually resolves
 - customer_notes — staff-authored, attributed (author_user_id); a verified
   fact, never an AI inference
 - customer_tags
@@ -239,7 +251,7 @@ Tables
 
 # 13. Relationships
 
-Tenant
+Resort Configuration (singleton)
 → Customer360
 → Conversations
 → Messages
@@ -259,7 +271,6 @@ Knowledge
 
 Index:
 
-- tenant_id
 - customer_id
 - conversation_id
 - email
@@ -275,8 +286,7 @@ Index:
 
 # 15. Security
 
-- Enable RLS on every table
-- Tenant isolation mandatory
+- Enable RLS on every table (authenticated-user policies — see rules.md §5)
 - Parameterized queries only
 - Foreign keys enforced
 - Audit critical actions
@@ -300,7 +310,7 @@ Track:
 
 # 17. Data Retention
 
-Configurable per tenant:
+Configurable per deployment (one resort per deployment):
 
 - Chat history
 - Call history
@@ -339,7 +349,6 @@ Configurable per tenant:
 
 Every table must be:
 
-✓ Tenant aware
 ✓ Secure
 ✓ Auditable
 ✓ Indexed

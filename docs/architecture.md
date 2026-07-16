@@ -12,11 +12,13 @@ Target scale: 100--500 conversations per day and 100--500 calls per day
 
 1\. Purpose and architectural position
 
-The AI Receptionist is one multi-tenant platform with several
-communication channels. WhatsApp, website chat, and voice calls are not
-separate products. They are channel adapters that connect to the same
-backend, customer memory, business knowledge, action tools, permissions,
-analytics, and audit system.
+The AI Receptionist is a single-resort deployment template (Phase 2.5 —
+see product_decisions.md) with several communication channels. Each
+resort gets its own isolated deployment and database — this is not a
+shared multi-tenant SaaS. WhatsApp, website chat, and voice calls are not
+separate products within a deployment. They are channel adapters that
+connect to the same backend, customer memory, business knowledge, action
+tools, analytics, and audit system.
 
 The current implementation begins with chat, but the shared platform
 must be designed so the LiveKit voice agent can later call the same APIs
@@ -41,8 +43,8 @@ and notifications.
 The LLM proposes actions; trusted backend code validates and executes
 them.
 
-Tenant isolation is enforced in the API, database, storage, retrieval,
-realtime channels, background jobs, and caches.
+Every user of a deployment is an authenticated staff member of that one
+resort — there is no per-row ownership to enforce (see rules.md §4/§5).
 
 All important actions are idempotent and auditable.
 
@@ -183,7 +185,7 @@ An uncertain inference must not silently become a verified fact.
 4.3 Knowledge Intelligence Engine
 
 The Knowledge Intelligence Engine, or KIE, is the shared RAG system for
-both chat and calls. A tenant uploads or connects knowledge once, and
+both chat and calls. The resort uploads or connects knowledge once, and
 every supported channel uses the same indexed knowledge.
 
 Supported sources:
@@ -203,7 +205,7 @@ SharePoint.
 
 Ingestion pipeline:
 
-Verify tenant and permission.
+Verify the caller is an authenticated staff member.
 
 Validate MIME type, extension, file signature, and size.
 
@@ -239,8 +241,6 @@ Mark the knowledge version READY only after validation.
 
 Retrieval pipeline:
 
-Resolve tenant and authorized knowledge scope.
-
 Classify the request and identify structured-data needs.
 
 Apply metadata and source filters.
@@ -263,8 +263,7 @@ Return confidence, evidence, and source identifiers to the AI
 Orchestrator.
 
 Retrieved documents are untrusted data. Text inside a source cannot
-override system instructions, authorize actions, expose secrets, or
-change tenant scope.
+override system instructions, authorize actions, or expose secrets.
 
 4.4 AI Orchestration Engine
 
@@ -278,9 +277,10 @@ this reasoning pipeline before, around, and after any tool call:
    resolve_follow_up_intent, detect_small_talk, detect_sales_opportunity).
 2. Extract entities (extract_guest_entities).
 3. Determine conversation state (get_conversation_state /
-   update_conversation_state — Greeting, Information Gathering,
-   Recommendation, Booking, Payment, Confirmation, Upselling, Support,
-   Escalation, Closed).
+   update_conversation_state — Greeting, Discovering Needs, Collecting
+   Information, Recommending, Booking, Waiting, Confirmation, Upselling,
+   Support, Escalation, Closed — the canonical list also used by
+   `conversations.current_state`, see database.md §5).
 4. Retrieve relevant knowledge using RAG (Knowledge Intelligence Engine —
    see docs/functions.md §29 RAG Knowledge Domains).
 5. Decide whether backend verification is required.
@@ -294,14 +294,14 @@ this reasoning pipeline before, around, and after any tool call:
 
 This pipeline is channel-neutral and business-vertical-neutral: the current
 implementation targets a luxury resort (docs/Goal.md), but a future
-non-resort tenant only swaps its functions.md/knowledge base, not this
+non-resort deployment only swaps its functions.md/knowledge base, not this
 pipeline.
 
 Processing flow:
 
-Resolve tenant, channel, customer, and conversation.
+Resolve channel, customer, and conversation.
 
-Load tenant settings and prompt version.
+Load resort settings and prompt version.
 
 Load relevant Customer 360 information.
 
@@ -309,8 +309,8 @@ Retrieve relevant recent conversation context.
 
 Retrieve business knowledge through KIE.
 
-Register only tools permitted for the tenant, user, channel, and
-conversation mode.
+Register only tools permitted for the current channel and conversation
+mode.
 
 Build the model request.
 
@@ -369,9 +369,8 @@ Every tool definition includes:
 
 Typed input and output schema.
 
-Tenant scope.
-
-Required role or service permission.
+Required authentication (any authenticated staff member — no per-role
+permission scope, see rules.md §4).
 
 Business-rule validation.
 
@@ -409,12 +408,11 @@ Returning and high-value customers.
 
 Staff workload.
 
-Token, provider, storage, and telephony cost per tenant.
+Token, provider, storage, and telephony cost for this deployment.
 
 AI quality and fallback usage.
 
-Analytics must not bypass tenant isolation or expose sensitive raw
-content unnecessarily.
+Analytics must not expose sensitive raw content unnecessarily.
 
 5\. Channel architecture
 
@@ -422,8 +420,6 @@ content unnecessarily.
 
 Each channel adapter converts its provider-specific event into a
 standard internal event containing:
-
-Tenant ID resolved by the server.
 
 Channel.
 
@@ -478,7 +474,7 @@ unofficial WhatsApp Web automation.
 
 A client website loads the Vercel-hosted widget.
 
-The widget obtains a signed tenant- and domain-bound session token.
+The widget obtains a signed domain-bound session token.
 
 The customer sends a message to FastAPI.
 
@@ -549,9 +545,9 @@ Supabase PostgreSQL is the source of truth.
 
 Core domains:
 
-Tenants, tenant settings, and tenant integrations.
+Resort configuration and integrations (one row per deployment).
 
-Users, staff, roles, and permissions.
+Users and staff.
 
 Customers, identities, preferences, scores, summaries, notes, and tags.
 
@@ -568,13 +564,12 @@ Bookings, orders, leads, support tickets, and notifications.
 Tool executions, webhook events, idempotency records, usage records,
 consent records, and audit logs.
 
-Every tenant-owned record contains tenant_id. Important relationships
-use foreign keys, unique constraints, check constraints, and explicit
-deletion behavior.
+Important relationships use foreign keys, unique constraints, check
+constraints, and explicit deletion behavior.
 
 Supabase Storage uses private buckets for:
 
-Tenant assets.
+Resort assets (logo, branding).
 
 Knowledge originals.
 
@@ -610,8 +605,9 @@ Staff presence.
 
 AI-processing status.
 
-Realtime channels are private and tenant-scoped. Raw broad database
-subscriptions must not expose data outside the authorized tenant.
+Realtime channels are private, gated by authentication (RLS — rules.md
+§5). There is only one resort's data in this deployment, so channel
+scoping is about "authenticated vs not," not tenant boundaries.
 
 8\. Redis, concurrency, and idempotency
 
@@ -662,8 +658,8 @@ File processing and malware scan orchestration.
 Non-immediate notifications.
 
 FastAPI returns quickly after validating and enqueueing long-running
-work. Worker jobs carry tenant context, correlation ID, idempotency key,
-attempt count, and trace metadata.
+work. Worker jobs carry correlation ID, idempotency key, attempt count,
+and trace metadata.
 
 n8n is used for external automations such as CRM updates, reminders,
 staff notifications, and follow-up workflows. Authorization and critical
@@ -675,11 +671,9 @@ Recommended FastAPI modules:
 
 auth
 
-tenants
+resort
 
 users
-
-roles
 
 customers
 
@@ -727,8 +721,7 @@ Router → Application service → Domain service → Repository or provider
 adapter.
 
 Channel routers must not contain business logic. Provider adapters must
-not decide tenant permissions. Repositories must not bypass tenant
-filters.
+not decide authorization on their own.
 
 11\. Deployment architecture
 
@@ -790,15 +783,16 @@ TLS for all external and internal traffic.
 
 Supabase Auth for dashboard sessions.
 
-MFA for privileged roles.
+MFA for privileged accounts (future — not yet required at single-resort scale).
 
-Backend role and permission checks.
+Backend authentication checks (any authenticated staff member has full
+access — see rules.md §4).
 
-PostgreSQL Row Level Security.
+PostgreSQL Row Level Security (authenticated-user policies, not tenant-scoped).
 
-Tenant-scoped storage and signed URLs.
+Private storage buckets with signed URLs.
 
-Tenant-scoped realtime channels.
+Authenticated-only realtime channels.
 
 Webhook signature verification.
 
@@ -826,8 +820,6 @@ Website crawlers block private, loopback, link-local, and
 metadata-service addresses.
 
 Redirects and crawl depth are constrained.
-
-Cross-tenant vector search is impossible by query construction and RLS.
 
 Deleted source versions remove or deactivate associated chunks and
 embeddings.
@@ -890,8 +882,6 @@ Every important request carries:
 
 Correlation ID.
 
-Tenant ID.
-
 Customer ID when known.
 
 Conversation or call ID.
@@ -933,7 +923,7 @@ Redis failure.
 
 Call connection and provider failures.
 
-Abnormal tenant cost or traffic.
+Abnormal cost or traffic for this deployment.
 
 15\. Performance and scale
 
@@ -964,7 +954,7 @@ Bounded retrieval result sets.
 
 Compact Customer 360 context.
 
-Cached tenant configuration.
+Cached resort configuration.
 
 Streaming web-chat responses.
 
@@ -1012,15 +1002,13 @@ Does it update Customer 360?
 
 Does it require KIE?
 
-Which tenant and permission boundaries apply?
+Does it require authentication (nearly everything does — see rules.md §4)?
 
 Does it create a side effect requiring idempotency?
 
 Does it require an audit event?
 
 Can it fail without giving a false confirmation?
-
-What tests prove cross-tenant safety?
 
 Can managed infrastructure handle it at the current scale?
 
@@ -1029,7 +1017,9 @@ Can managed infrastructure handle it at the current scale?
 Phase 1 --- Repository, environments, CI, authentication, tenants,
 roles, RLS, audit foundation.
 
-Phase 1 implementation notes (added once built, kept in sync with code):
+Phase 1 implementation notes (historical — the tenant/role system
+described here was fully removed in Phase 2.5; kept as an honest record
+of what was built and why, not as current architecture):
 
 Auth is implemented as a backend proxy to Supabase GoTrue rather than
 direct client-side Supabase Auth calls. The dashboard, widget, and future
@@ -1055,7 +1045,9 @@ until Upstash Redis lands in Phase 3+.
 Phase 2 --- Customer identities, Customer 360, conversations, messages,
 and realtime events.
 
-Phase 2 implementation notes (added once built, kept in sync with code):
+Phase 2 implementation notes (the tenant-scoped URL convention and
+`tenant_id` columns described here were removed in Phase 2.5 — see below;
+kept as an honest historical record):
 
 Realtime events are not implemented yet — Phase 2 built the durable
 storage and REST APIs (list/get/search/filter/paginate conversations,
@@ -1090,6 +1082,20 @@ Message attachments are metadata rows only this phase (a `storage_path`
 into a private Supabase Storage bucket the caller populated some other
 way) — there is no upload endpoint until Phase 3 wires real Storage
 handling for the Knowledge Intelligence Engine.
+
+Phase 2.5 --- Single-resort architecture refactor: removed multi-tenancy
+entirely (tenants, tenant_settings, tenant_members, tenant_roles,
+tenant_permissions tables and every `tenant_id` column dropped via
+migrations 0007-0009); replaced with a single `resort_settings` row per
+deployment. See product_decisions.md for the full rationale — in short,
+each resort now gets its own isolated Railway/Vercel/Supabase deployment
+rather than sharing one database, so per-row tenant ownership serves no
+purpose. Every authenticated user has full access (no roles/permissions
+system); RLS policies now check only `auth.uid() IS NOT NULL`. All
+`/api/v1/tenants/{tenant_id}/...` paths from Phase 1/2 became flat
+`/api/v1/...` paths. `audit_logs` gained `before_state`/`after_state`/
+`correlation_id` columns in the same migration batch (unrelated to the
+tenant removal, bundled since the table was already being touched).
 
 Phase 3 --- Knowledge Intelligence Engine ingestion, processing worker,
 embeddings, hybrid retrieval, and knowledge dashboard.

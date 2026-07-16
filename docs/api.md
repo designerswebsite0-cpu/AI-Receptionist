@@ -3,6 +3,7 @@
 
 > Status: Living API Specification
 > Scope: Unified APIs for Chat, Calls, Customer360 and Knowledge Intelligence Engine
+> Architecture: Single-resort deployment template (Phase 2.5) — one deployment, one resort, no tenant scoping
 
 ---
 
@@ -12,8 +13,7 @@
 - JSON request/response
 - Versioned (`/api/v1`)
 - HTTPS only
-- JWT Authentication
-- Tenant isolation on every request
+- JWT Authentication (any authenticated user has full access — see rules.md §4)
 - Idempotent where required
 
 ---
@@ -32,79 +32,51 @@ POST /api/v1/auth/logout
 POST /api/v1/auth/refresh
 GET  /api/v1/auth/me
 
-**Implementation note (Phase 1):** these endpoints are real backend proxies to
+**Implementation note:** these endpoints are real backend proxies to
 Supabase GoTrue (via `httpx`), not thin documentation of a client-side Supabase
 Auth call. Every client — dashboard, widget, and the future voice-agent —
 authenticates through this one backend surface so login/logout are
 consistently audited (`audit_logs`) and no client ever needs the Supabase
 anon/service keys directly for auth. `/auth/login` is rate-limited
-(in-process token bucket in Phase 1; moves to an Upstash-backed shared
-limiter once Redis is wired in Phase 3+ — see roadmap.md tech debt).
-`/auth/me` returns the verified user plus their active tenant memberships.
+(in-process token bucket; moves to an Upstash-backed shared limiter once
+Redis is wired in Phase 3+ — see roadmap.md tech debt).
+
+`/auth/me` returns the verified user plus `resort_configured` (whether
+`resort_settings` has been created yet) — no memberships/roles (Phase 2.5
+removed the tenant/role system entirely, not just its enforcement).
 
 ---
 
-# Tenants
+# Resort Settings
 
-GET    /api/v1/tenants/me                          — list tenants the caller belongs to
-POST   /api/v1/tenants                              — create a tenant; caller becomes its owner
-GET    /api/v1/tenants/{tenant_id}                  — get tenant details (requires `tenant.view`)
-GET    /api/v1/tenants/{tenant_id}/members           — list members (requires `members.view`)
-POST   /api/v1/tenants/{tenant_id}/members           — invite a member by email (requires `members.invite`)
-PATCH  /api/v1/tenants/{tenant_id}/members/{member_id} — change a member's role (requires `members.update_role`)
-DELETE /api/v1/tenants/{tenant_id}/members/{member_id} — remove a member (requires `members.remove`)
+**Status: implemented (Phase 2.5).** Replaces the old Tenants section —
+there is exactly one resort per deployment, configured once via first-run
+setup.
 
-**Conflict resolution (Phase 1):** earlier drafts of this document had no
-Tenants section even though database.md/architecture.md require a full
-tenant module. This section is the authoritative one. `tenant_id` in every
-path above is resolved from the URL but never blindly trusted — the backend
-verifies the caller has an active `tenant_members` row for that tenant
-before authorizing anything (see `app.deps.get_current_membership`), which
-satisfies rules.md §5's "never trust a client-supplied tenant ID" rule
-without requiring a separate header scheme.
+POST  /api/v1/resort/settings — create (fails with 409 if already configured)
+GET   /api/v1/resort/settings — get the current configuration (404 if not yet configured)
+PATCH /api/v1/resort/settings — update any subset of fields
 
-**Roles (Phase 1, system-seeded, shared across all tenants):** `owner`,
-`admin`, `manager`, `staff`, `read_only`. Permission matrix lives in
-`apps/api/app/roles/seed_data.py` and is frozen into Alembic migration
-`0001` at write time (migrations must stay reproducible even if the seed
-data module changes later).
-
-**Superseded:** the `# Admin` section's `/api/v1/admin/users` endpoints
-below are not implemented in Phase 1. Tenant member management is exposed
-exclusively via `/api/v1/tenants/{tenant_id}/members` instead — there is no
-cross-tenant superadmin surface yet.
-
-**Known Phase 1 limitation:** inviting a member requires that person to
-already have a Supabase Auth account (matched by email). A pending-invite
-flow (invite email, deferred until an account exists) is deferred to Phase
-7 alongside Resend integration — this is documented tech debt, not a
-silent gap.
+Any authenticated user may call these (rules.md §4 — no role restriction).
+`resort_settings` allows exactly one row, enforced by a database-level
+UNIQUE constraint on a `singleton` column, not just an application check.
 
 ---
 
 # Customer 360
 
-**Status: foundation implemented in Phase 2.** Nested under
-`/tenants/{tenant_id}/` for the same reason the Tenants section above is —
-tenant_id is resolved from the URL but verified against the caller's own
-membership before anything is authorized (`app.deps.get_current_membership`).
-This supersedes the flat `/api/v1/customers` paths originally sketched
-below; there is no cross-tenant customer listing.
+**Status: foundation implemented in Phase 2, flattened in Phase 2.5.** No
+tenant scoping — a verified session is all that's required.
 
-POST   /api/v1/tenants/{tenant_id}/customers
-GET    /api/v1/tenants/{tenant_id}/customers?search=&tag=&page=&page_size=
-GET    /api/v1/tenants/{tenant_id}/customers/{customer_id}
-PATCH  /api/v1/tenants/{tenant_id}/customers/{customer_id}
-POST   /api/v1/tenants/{tenant_id}/customers/{customer_id}/contacts
-GET    /api/v1/tenants/{tenant_id}/customers/{customer_id}/notes
-POST   /api/v1/tenants/{tenant_id}/customers/{customer_id}/notes
-POST   /api/v1/tenants/{tenant_id}/customers/{customer_id}/tags
-DELETE /api/v1/tenants/{tenant_id}/customers/{customer_id}/tags/{tag}
-
-Requires `customers.view` (read endpoints) / `customers.manage` (write
-endpoints) — currently unenforced while `RBAC_ENFORCEMENT_ENABLED=false`
-(rules.md §4), but every endpoint already declares the correct requirement
-so enforcement is a config flip, not a code change.
+POST   /api/v1/customers
+GET    /api/v1/customers?search=&tag=&page=&page_size=
+GET    /api/v1/customers/{customer_id}
+PATCH  /api/v1/customers/{customer_id}
+POST   /api/v1/customers/{customer_id}/contacts
+GET    /api/v1/customers/{customer_id}/notes
+POST   /api/v1/customers/{customer_id}/notes
+POST   /api/v1/customers/{customer_id}/tags
+DELETE /api/v1/customers/{customer_id}/tags/{tag}
 
 Not yet implemented: `/summary` (AI-generated brief — Phase 4),
 `/history`/`/timeline` (derived from conversations + bookings — query
@@ -116,18 +88,16 @@ with the data-retention work referenced in rules.md §19).
 
 # Conversations
 
-**Status: foundation implemented in Phase 2.** Same tenant-scoped
-convention as Customers above — supersedes the flat paths originally
-sketched below.
+**Status: foundation implemented in Phase 2, flattened in Phase 2.5.**
 
-POST   /api/v1/tenants/{tenant_id}/conversations
-GET    /api/v1/tenants/{tenant_id}/conversations?status=&channel=&assigned_agent_id=&customer_id=&page=&page_size=
-GET    /api/v1/tenants/{tenant_id}/conversations/{conversation_id}
-PATCH  /api/v1/tenants/{tenant_id}/conversations/{conversation_id}
-POST   /api/v1/tenants/{tenant_id}/conversations/{conversation_id}/assign
-POST   /api/v1/tenants/{tenant_id}/conversations/{conversation_id}/status
-POST   /api/v1/tenants/{tenant_id}/conversations/{conversation_id}/close
-POST   /api/v1/tenants/{tenant_id}/conversations/{conversation_id}/state
+POST   /api/v1/conversations
+GET    /api/v1/conversations?status=&channel=&assigned_agent_id=&customer_id=&page=&page_size=
+GET    /api/v1/conversations/{conversation_id}
+PATCH  /api/v1/conversations/{conversation_id}
+POST   /api/v1/conversations/{conversation_id}/assign
+POST   /api/v1/conversations/{conversation_id}/status
+POST   /api/v1/conversations/{conversation_id}/close
+POST   /api/v1/conversations/{conversation_id}/state
 
 `status` (lifecycle/queue state — one of `open`, `waiting_for_guest`,
 `waiting_for_staff`, `ai_handling`, `human_handling`, `escalated`, `closed`,
@@ -138,23 +108,20 @@ are independent — see architecture.md §4.4 and product_decisions.md for
 why, and why `blocked` is retained from the original architecture spec
 alongside the 7 statuses the Phase 2 brief specified.
 
-`/handoff` from the original sketch is superseded by `/status` with
+`/handoff` from an earlier sketch is superseded by `/status` with
 `status=human_handling` (also flips `ai_active`/`human_active`
 accordingly) — one endpoint, not two overlapping ones.
-
-Requires `conversations.view` / `conversations.manage` (same
-currently-unenforced-by-default caveat as Customers above).
 
 ---
 
 # Messages
 
-**Status: foundation implemented in Phase 2.** Nested under a conversation,
-not flat — supersedes the sketch below.
+**Status: foundation implemented in Phase 2, flattened in Phase 2.5.**
+Nested under a conversation, not flat at the top level.
 
-GET    /api/v1/tenants/{tenant_id}/conversations/{conversation_id}/messages?page=&page_size=
-POST   /api/v1/tenants/{tenant_id}/conversations/{conversation_id}/messages
-POST   /api/v1/tenants/{tenant_id}/conversations/{conversation_id}/messages/{message_id}/read
+GET    /api/v1/conversations/{conversation_id}/messages?page=&page_size=
+POST   /api/v1/conversations/{conversation_id}/messages
+POST   /api/v1/conversations/{conversation_id}/messages/{message_id}/read
 
 `POST .../messages` accepts an optional `external_message_id`; sending the
 same one twice returns the original message instead of creating a
@@ -164,7 +131,7 @@ retry (Phase 6) will rely on. Attachments are metadata-only right now
 already uploaded some other way) — there's no upload endpoint yet; that
 arrives with the Knowledge Intelligence Engine's storage plumbing (Phase 3).
 
-Flat `/api/v1/messages/send` and `/api/v1/messages/retry` from the original
+Flat `/api/v1/messages/send` and `/api/v1/messages/retry` from an earlier
 sketch are not implemented — retry logic is meaningless before Phase 6
 gives us a real provider whose deliveries can actually fail and need
 retrying.
@@ -248,9 +215,11 @@ GET /api/v1/analytics/knowledge
 
 # Admin
 
-**Not implemented in Phase 1** — see the Tenants section above, which is the
-current member-management surface. This section is reserved for a future
-platform-level (cross-tenant) superadmin role, not yet built.
+**Not implemented.** A single-resort deployment has no cross-tenant
+superadmin concept (Phase 2.5 removed the tenant/role system entirely —
+see product_decisions.md). Staff account management, if ever needed beyond
+Supabase Auth's own user management, would live here — not built yet and
+not currently planned.
 
 GET    /api/v1/admin/users
 POST   /api/v1/admin/users
@@ -288,10 +257,9 @@ Error
 - JWT required unless endpoint is public
 - Verify webhook signatures
 - Validate request schema
-- Enforce tenant_id server-side
 - Audit critical actions
 - Rate limit sensitive endpoints
-- Never expose internal IDs across tenants
+- Never expose Supabase service-role keys to any client
 
 ---
 
@@ -302,4 +270,3 @@ v1
 
 Future:
 v2 introduces backward-compatible expansion where possible.
-

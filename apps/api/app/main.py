@@ -9,7 +9,7 @@ from app.errors import register_exception_handlers
 from app.health.router import router as health_router
 from app.logging import configure_logging
 from app.middleware import RequestContextMiddleware
-from app.tenants.router import router as tenants_router
+from app.resort.router import router as resort_router
 
 settings = get_settings()
 configure_logging("DEBUG" if settings.app_env == "development" else "INFO")
@@ -17,7 +17,10 @@ configure_logging("DEBUG" if settings.app_env == "development" else "INFO")
 app = FastAPI(
     title="AI Receptionist API",
     version="0.1.0",
-    description="Unified multi-tenant backend for WhatsApp, Website Chat, and (future) Voice.",
+    description=(
+        "Single-resort AI Receptionist backend (WhatsApp, Website Chat, future Voice) — "
+        "reusable as a deployment template; each deployment serves exactly one resort."
+    ),
 )
 
 app.add_middleware(
@@ -33,6 +36,6 @@ register_exception_handlers(app)
 
 app.include_router(health_router)
 app.include_router(auth_router)
-app.include_router(tenants_router)
+app.include_router(resort_router)
 app.include_router(customers_router)
 app.include_router(conversations_router)

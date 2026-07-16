@@ -5,12 +5,12 @@ from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.common.models import TenantScopedMixin, TimestampMixin, UUIDPrimaryKeyMixin
+from app.common.models import TimestampMixin, UUIDPrimaryKeyMixin
 from app.database import Base
 from app.messages.constants import ATTACHMENT_TYPES, CONTENT_TYPES, DELIVERY_STATUSES, DIRECTIONS, SENDER_TYPES
 
 
-class Message(Base, UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin):
+class Message(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """Channel-independent message — the same shape for WhatsApp, web chat,
     and (later) voice-call transcripts. Channel adapters normalize into
     this shape rather than the platform branching on channel per message.
@@ -48,7 +48,7 @@ class Message(Base, UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin):
     )
 
 
-class MessageAttachment(Base, UUIDPrimaryKeyMixin, TenantScopedMixin, TimestampMixin):
+class MessageAttachment(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """Points at a private Supabase Storage object — never a public URL.
     Only backend code generates short-lived signed URLs from storage_path
     (architecture.md §6/§12)."""

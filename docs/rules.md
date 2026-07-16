@@ -12,7 +12,7 @@ This platform is built on:
 
 - Security First
 - Privacy First
-- Multi-Tenant First
+- Single-Resort Per Deployment First (Phase 2.5 — reusable template, not shared multi-tenant SaaS)
 - API First
 - AI First
 - Reliability First
@@ -27,9 +27,7 @@ Treat every request as untrusted.
 
 Always verify:
 
-- User identity
-- Tenant identity
-- Permissions
+- User identity (a verified Supabase session — see §4)
 - Tool arguments
 - Uploaded files
 - Webhook signatures
@@ -54,39 +52,34 @@ Never trust client-side validation.
 Every endpoint must:
 
 - Authenticate
-- Authorize
 - Audit
 
-Role-based permissions:
+**Single-resort access model (Phase 2.5 — see docs/product_decisions.md):**
+there is no role/permission system. Any authenticated user has full access
+to this deployment's one resort. The earlier `owner`/`admin`/`manager`/
+`staff`/`read_only` role system, `tenant_members`/`tenant_roles`/
+`tenant_permissions` tables, and `require_permission`/
+`RBAC_ENFORCEMENT_ENABLED` flag were removed entirely, not switched off —
+there is nothing left to flip back on. Do not build dashboard UI that
+hides features based on role; there is no role to check.
 
-- Owner
-- Admin
-- Manager
-- Staff
-- Read-only
-
-**TEMPORARY (current development phase only):** fine-grained permission
-enforcement is switched off via `RBAC_ENFORCEMENT_ENABLED=false` while the
-AI/RAG/booking build-out is underway, so every authenticated, tenant-verified
-user has full administrative access — see docs/product_decisions.md. This
-does **not** relax tenant isolation: `get_current_membership` still rejects
-anyone who isn't an active member of the tenant they're acting on. The RBAC
-tables, roles, and permission checks remain fully implemented and must not
-be removed; flipping the flag back to `true` re-enables enforcement with no
-structural changes. Do not build dashboard UI that hides features based on
-role while this flag is off.
+If role distinctions are ever needed again, they must be reintroduced
+deliberately (new tables, new checks) rather than assumed to still exist
+in dormant form.
 
 ---
 
-# 5. Multi-Tenant Rules
+# 5. Single-Resort Deployment Rules
 
 Mandatory:
 
-- Every database row contains tenant_id.
-- Every query filters by tenant_id.
-- Every storage object belongs to one tenant.
-- Every realtime event is tenant scoped.
-- Never allow cross-tenant reads or writes.
+- One deployment serves exactly one resort's data — never share one
+  database or one Supabase project across resorts.
+- A new resort means a new deployment (new Railway backend, new Vercel
+  frontend, new Supabase project), not a new row in a shared table.
+- Every table requires only authentication, not per-row ownership — RLS
+  policies check `auth.uid() IS NOT NULL`, nothing more.
+- The Supabase service-role key must never be exposed to any client.
 
 ---
 
@@ -329,8 +322,7 @@ Every feature requires:
 
 - Unit tests
 - Integration tests
-- Authorization tests
-- Tenant isolation tests
+- Authentication tests (unauthenticated requests must be rejected)
 - Regression tests
 
 KIE additionally requires:

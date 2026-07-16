@@ -48,14 +48,6 @@ class Settings(BaseSettings):
     auth_login_rate_limit_per_minute: int = 10
     session_cookie_secure: bool = True
 
-    # Temporary development-phase switch (see docs/product_decisions.md).
-    # RBAC tables/roles/permissions stay fully implemented; when this is
-    # False, permission checks are skipped so any active tenant member has
-    # full access. Tenant membership/isolation is NEVER bypassed by this
-    # flag — only fine-grained role permissions are. Flip to True to
-    # re-enable enforcement once the AI/RAG/booking build-out is stable.
-    rbac_enforcement_enabled: bool = False
-
     # Redis (optional until Phase 3)
     redis_url: str | None = None
 

@@ -23,7 +23,6 @@ async def transition_state(
     metadata: dict | None = None,
 ) -> ConversationStateEvent:
     event = ConversationStateEvent(
-        tenant_id=conversation.tenant_id,
         conversation_id=conversation.id,
         from_state=conversation.current_state,
         to_state=to_state,
@@ -35,13 +34,10 @@ async def transition_state(
     return event
 
 
-async def get_state_history(db: AsyncSession, tenant_id: uuid.UUID, conversation_id: uuid.UUID) -> list:
+async def get_state_history(db: AsyncSession, conversation_id: uuid.UUID) -> list:
     result = await db.execute(
         select(ConversationStateEvent)
-        .where(
-            ConversationStateEvent.tenant_id == tenant_id,
-            ConversationStateEvent.conversation_id == conversation_id,
-        )
+        .where(ConversationStateEvent.conversation_id == conversation_id)
         .order_by(ConversationStateEvent.created_at.asc())
     )
     return list(result.scalars().all())

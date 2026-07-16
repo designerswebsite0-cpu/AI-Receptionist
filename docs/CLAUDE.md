@@ -9,13 +9,15 @@
 
 You are the lead software architect and senior engineer for this project.
 
-Your responsibility is to build a production-grade, multi-tenant AI Receptionist platform that supports:
+Your responsibility is to build a production-grade AI Receptionist platform that supports:
 
 - WhatsApp
 - Website Live Chat
 - AI Voice Calls (future integration)
 
 The chatbot is the current implementation focus, but every decision must remain compatible with the future voice system.
+
+**Architecture (Phase 2.5):** this is a reusable single-resort deployment template, not multi-tenant SaaS. Each resort gets its own isolated deployment and database — see rules.md §5 and product_decisions.md. Never reintroduce tenant_id or a shared-database assumption without an explicit new decision to do so.
 
 ---
 
@@ -64,7 +66,7 @@ Before writing new code:
 - Read docs/rules.md
 - Read docs/functions.md (Business Tool Layer + AI Intelligence Layer for the
   current resort implementation)
-- Read docs/product_decisions.md (current temporary decisions, e.g. RBAC bypass)
+- Read docs/product_decisions.md (architectural decisions and rationale, e.g. the Phase 2.5 single-resort refactor)
 
 Treat those documents as the source of truth.
 
@@ -162,7 +164,7 @@ Validate:
 - API requests
 - tool arguments
 - uploaded files
-- tenant identity
+- user identity (a verified Supabase session — no tenant concept, see rules.md §4)
 
 Never expose:
 
@@ -172,30 +174,25 @@ Never expose:
 
 ---
 
-# Temporary RBAC Bypass (current phase only)
+# Single-Resort Access Model (Phase 2.5)
 
-`RBAC_ENFORCEMENT_ENABLED=false` during this build phase: any authenticated,
-tenant-verified user has full admin access, to reduce friction while
-building the AI/RAG/booking layers. Do not add role-based UI hiding or
-extra role checks while this is off. Never let this bypass relax tenant
-isolation — `get_current_membership` must still reject non-members. Keep
-all RBAC tables/roles/permissions intact so enforcement can be re-enabled
-later with a single flag flip. See docs/product_decisions.md.
+There is no role/permission system anymore — not switched off, removed.
+Any authenticated user has full access to this deployment's one resort.
+`app.deps.get_current_user` (authentication only) is the only access check
+any endpoint needs. Do not add role-based UI hiding, permission checks, or
+a `tenant_id`/`current_tenant` concept back into the codebase without an
+explicit new decision to reintroduce role distinctions — see
+docs/product_decisions.md for why this was removed and rules.md §4/§5 for
+the resulting rules.
 
 ---
 
-# Multi-Tenant Rules
+# Single-Resort Rules
 
-Every feature must be tenant aware.
-
-Never allow:
-
-- cross-tenant reads
-- cross-tenant writes
-- cross-tenant search
-- cross-tenant AI retrieval
-
-Every query must include tenant context.
+Every deployment serves exactly one resort's data — never build a feature
+that assumes multiple resorts share one database. A new resort is a new
+deployment (new Supabase project, new Railway/Vercel apps), never a new
+row in a shared table.
 
 ---
 
@@ -236,8 +233,7 @@ Every important feature should include:
 
 - happy path
 - invalid input
-- authorization
-- tenant isolation
+- authentication (unauthenticated requests rejected)
 - duplicate requests
 - provider failures
 

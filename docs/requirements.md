@@ -33,7 +33,7 @@ Every subsystem must be reusable across channels.
 The platform must be:
 
 - Production-ready
-- Multi-tenant
+- Single-resort per deployment (Phase 2.5 — reusable template, not shared multi-tenant SaaS; see roadmap.md/product_decisions.md)
 - API-first
 - AI-first
 - Security-first
@@ -287,6 +287,13 @@ and are the default infrastructure for all deployment, hosting, database,
 and CI/CD work from this point forward. Do not substitute alternative
 providers unless explicitly instructed.
 
+**Single-resort deployment model (Phase 2.5):** each resort gets its own
+Railway backend, Vercel frontend, and Supabase project/database — this
+list of providers is the template every deployment reuses, not one shared
+installation. Deploying a second resort means repeating this stack with a
+fresh Supabase project and fresh environment variables, never adding a
+second tenant to an existing one.
+
 ---
 
 # 7. Docker Strategy
@@ -361,7 +368,6 @@ Upload
 
 Requirements
 
-- Tenant isolation
 - Versioning
 - Metadata
 - Hybrid Retrieval
@@ -395,8 +401,7 @@ Must support:
 
 Pipeline
 
-Resolve Tenant
-→ Resolve Customer
+Resolve Customer
 → Load Customer 360
 → Retrieve Knowledge
 → Build Context
@@ -415,8 +420,7 @@ Reference rules.md.
 
 Mandatory:
 
-- RLS
-- Tenant isolation
+- RLS (authenticated-user policies; single-resort per deployment, so no cross-tenant isolation concern — see rules.md)
 - Webhook validation
 - Rate limiting
 - Audit logs

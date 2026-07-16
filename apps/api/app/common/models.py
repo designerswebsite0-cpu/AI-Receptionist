@@ -1,9 +1,9 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, func
+from sqlalchemy import DateTime, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, declared_attr, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 
 
 class UUIDPrimaryKeyMixin:
@@ -23,16 +23,3 @@ class TimestampMixin:
 
 class SoftDeleteMixin:
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-
-class TenantScopedMixin:
-    """Every tenant-owned table must include tenant_id — see rules.md §5."""
-
-    @declared_attr
-    def tenant_id(cls) -> Mapped[uuid.UUID]:
-        return mapped_column(
-            UUID(as_uuid=True),
-            ForeignKey("tenants.id", ondelete="CASCADE"),
-            nullable=False,
-            index=True,
-        )

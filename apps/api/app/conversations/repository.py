@@ -6,16 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.conversations.models import Conversation
 
 
-async def get_conversation(db: AsyncSession, tenant_id: uuid.UUID, conversation_id: uuid.UUID) -> Conversation | None:
-    result = await db.execute(
-        select(Conversation).where(Conversation.id == conversation_id, Conversation.tenant_id == tenant_id)
-    )
+async def get_conversation(db: AsyncSession, conversation_id: uuid.UUID) -> Conversation | None:
+    result = await db.execute(select(Conversation).where(Conversation.id == conversation_id))
     return result.scalar_one_or_none()
 
 
 async def search_conversations(
     db: AsyncSession,
-    tenant_id: uuid.UUID,
     *,
     status: str | None,
     channel: str | None,
@@ -24,8 +21,8 @@ async def search_conversations(
     offset: int,
     limit: int,
 ) -> tuple[list[Conversation], int]:
-    query = select(Conversation).where(Conversation.tenant_id == tenant_id)
-    count_query = select(func.count()).select_from(Conversation).where(Conversation.tenant_id == tenant_id)
+    query = select(Conversation)
+    count_query = select(func.count()).select_from(Conversation)
 
     if status:
         query = query.where(Conversation.status == status)

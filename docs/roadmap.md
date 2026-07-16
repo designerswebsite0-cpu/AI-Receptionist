@@ -28,25 +28,29 @@ Goals
 
 - [x] Repository setup
 - [x] Monorepo structure (npm workspaces; Turborepo deferred until 3+ JS apps actually build)
-- [x] FastAPI backend (config, logging, errors, health, auth, tenants, roles, audit)
-- [x] Next.js dashboard (login, protected shell, tenant creation, health badge)
+- [x] FastAPI backend (config, logging, errors, health, auth, audit)
+- [x] Next.js dashboard (login, protected shell, health badge)
 - [x] Docker (API Dockerfile pinned to python:3.12-slim; not yet built/run locally — no Docker installed on the dev machine used to scaffold this)
-- [ ] Railway & Vercel — not deployed yet; deliberately deferred until credentials/hosting are set up
-- [x] Supabase — client wiring + JWKS auth + RLS migrations written; no live project connected yet (scaffold-only, per product_decisions.md)
+- [x] Railway & Vercel — accounts provisioned; not yet deployed (local scaffold remains the verified state)
+- [x] Supabase — client wiring + JWKS auth + RLS migrations written; connected to a real project since 2026-07-15
 - [x] Authentication (Supabase GoTrue proxy + JWT verification)
-- [x] Tenant management (tenants, tenant_settings, tenant_members, tenant_roles, tenant_permissions + RBAC)
-- [x] Base CI/CD (GitHub Actions workflow written; not yet run — repo is not yet under git/GitHub, per user decision)
+- [x] Base CI/CD (GitHub Actions workflow written and running on push)
 - [x] Audit logging foundation
 
 Deliverable:
-A secure multi-tenant foundation.
+A secure foundation.
+
+**Superseded (Phase 2.5, 2026-07-16):** this phase originally built a full
+multi-tenant system (tenants, tenant_settings, tenant_members, tenant_roles,
+tenant_permissions, RBAC). All of it was removed in Phase 2.5 — the product
+is a single-resort deployment template, not shared multi-tenant SaaS. See
+Phase 2.5 below and product_decisions.md.
 
 Known Phase 1 tech debt (tracked, not silent):
 
 - Rate limiting on `/auth/login` is in-process (single-replica) — swap for an Upstash-backed shared limiter once Redis is wired in Phase 3.
 - JWKS caching is in-process — move to a Redis-backed shared cache in Phase 3 alongside the rate limiter.
-- Member invites require the invitee to already have a Supabase Auth account — a pending-invite-by-email flow arrives with Resend in Phase 7.
-- No git repository has been initialized yet (user decision) and no Supabase/Docker credentials are configured — the code is written and unit-tested, but DB-dependent tests and real login have not been run end-to-end. See README.md for what's needed to do that.
+- ~~Member invites require the invitee to already have a Supabase Auth account~~ — moot: Phase 2.5 removed the member/invite system entirely; every authenticated user has full access to this deployment's one resort.
 
 ---
 
@@ -69,11 +73,10 @@ reasoning layer (architecture.md §4.4's 8-step pipeline):
 - The Business Tool Layer itself (docs/functions.md §1–27) lands as Phase 7
   Business Action Engine work, resort-scoped.
 
-**Temporary RBAC bypass (development phase only):** `RBAC_ENFORCEMENT_ENABLED`
-defaults to `false` — every authenticated, tenant-verified user has full
-admin access while this build-out is underway. Tenant isolation is not
-affected. See rules.md §4 and product_decisions.md. Must be flipped back to
-`true` before this reaches real guests.
+**Superseded (Phase 2.5):** the temporary `RBAC_ENFORCEMENT_ENABLED` bypass
+described here has been replaced by permanent removal of the role/tenant
+system — every authenticated user now has full access by design, not by a
+flippable flag. See rules.md §4 and product_decisions.md.
 
 ---
 
@@ -103,8 +106,6 @@ Phase 2 brief that superseded it — see product_decisions.md):
   conversations, assign, change status, change dialogue state, send
   message, mark read
 - [x] RLS on every new table
-- [x] RBAC permissions extended (customers.*, conversations.*) — same
-  temporary bypass as Phase 1 applies
 
 Deliverable:
 Unified customer + conversation memory shared across all channels — the
@@ -122,6 +123,72 @@ Known Phase 2 tech debt (tracked, not silent):
   respectively to have real data to summarize/aggregate.
 - No hard-delete endpoint for customers yet — pairs with the data-retention
   policy work in rules.md §19, not built standalone.
+
+---
+
+# Phase 2.5 — Single-Resort Architecture Refactor
+
+Status: **Implemented and verified** (2026-07-16). Required before Phase 3
+per the instruction that introduced it — no Redis/RAG/AI orchestration/
+WhatsApp/voice work was started until this landed.
+
+Core decision: the product is no longer multi-tenant SaaS. Each resort now
+gets its own isolated deployment (Railway backend, Vercel frontend,
+Supabase project/database). The codebase stays reusable as a template;
+deployed systems and their data are fully separate from each other.
+
+Built:
+
+- [x] `resort_settings` table — singleton (enforced by a UNIQUE constraint,
+  not just an application check), replacing `tenant_settings`
+- [x] Removed `tenants`, `tenant_settings`, `tenant_members`, `tenant_roles`,
+  `tenant_permissions` tables (migration `0008`)
+- [x] Removed `tenant_id` from `customers`, `customer_contacts`,
+  `customer_notes`, `customer_tags`, `conversations`,
+  `conversation_state_events`, `messages`, `message_attachments`,
+  `audit_logs` — with constraints/indexes updated accordingly
+  (`customer_contacts`' unique constraint went from tenant-scoped to
+  globally unique per deployment)
+- [x] Removed `app/tenants/` and `app/roles/` modules entirely; removed
+  `require_permission`/`CurrentMembership`/`get_current_membership`;
+  `app.deps.get_current_user` (authentication only) is now the only access
+  check any endpoint needs
+- [x] Removed `RBAC_ENFORCEMENT_ENABLED` — there is no enforcement to toggle
+  anymore, the role system itself is gone, not just switched off
+- [x] Flattened every API route: `/api/v1/tenants/{tenant_id}/customers` →
+  `/api/v1/customers`, same for `/conversations`; added
+  `/api/v1/resort/settings`
+- [x] RLS replaced on every table: authenticated-user policies
+  (`auth.uid() IS NOT NULL`) instead of tenant-membership subqueries
+- [x] `audit_logs` gained `before_state`/`after_state`/`correlation_id`
+  columns (bundled into the same migration batch; unrelated to tenancy)
+- [x] Dashboard: removed tenant creation/switcher UI; added first-run
+  resort setup flow (`ResortSetupForm`, gated on `GET /auth/me`'s new
+  `resort_configured` flag)
+- [x] Tests: removed `test_rbac.py`/`test_tenant_isolation.py`; added
+  `test_resort_settings.py` and `test_auth_required.py` (authentication-only
+  access checks); updated customer/conversation tests to drop `tenant_id`
+
+Deliverable:
+A stable single-resort foundation — every Phase 1/2 feature (auth,
+customers, conversations, messages, audit) continues to work, now without
+any tenant concept anywhere in the code, schema, or docs.
+
+Known Phase 2.5 tech debt (tracked, not silent):
+
+- Migration `0008`'s `downgrade()` deliberately raises `NotImplementedError`
+  — reconstructing per-row tenant ownership for data created after the
+  migration ran isn't inferable; restoring from a pre-migration backup is
+  the documented recovery path instead.
+- `pytest`'s DB-gated tests (customers/conversations/resort_settings)
+  still skip locally rather than run against the connected real Supabase
+  project, since their fixture teardown does `DROP TABLE` — verified via a
+  scripted smoke test with surgical cleanup instead (see
+  product_decisions.md); the same tests run for real in CI's disposable
+  Postgres container.
+- MFA for privileged accounts (mentioned in architecture.md §12) isn't
+  needed yet at single-resort, single-role scale — deferred until there's
+  a reason to reintroduce role distinctions.
 
 ---
 
@@ -222,7 +289,7 @@ Build
 - Knowledge analytics
 
 Deliverable:
-Operational insights for every tenant.
+Operational insights for this deployment's resort.
 
 ---
 
@@ -288,7 +355,7 @@ Capabilities
 Technical
 
 - Secure
-- Multi-tenant
+- Reusable across resorts as a deployment template (Phase 2.5)
 - Scalable
 - Observable
 - Maintainable

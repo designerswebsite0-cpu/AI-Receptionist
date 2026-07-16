@@ -12,12 +12,11 @@ from app.errors import NotFoundError
 
 
 async def create_conversation(
-    db: AsyncSession, *, tenant_id: uuid.UUID, body: ConversationCreateRequest, actor_user_id: uuid.UUID | None
+    db: AsyncSession, *, body: ConversationCreateRequest, actor_user_id: uuid.UUID | None
 ) -> Conversation:
-    await get_customer_or_404(db, tenant_id, body.customer_id)
+    await get_customer_or_404(db, body.customer_id)
 
     conversation = Conversation(
-        tenant_id=tenant_id,
         customer_id=body.customer_id,
         channel=body.channel,
         priority=body.priority,
@@ -29,7 +28,6 @@ async def create_conversation(
 
     await record_audit_event(
         db,
-        tenant_id=tenant_id,
         actor_user_id=actor_user_id,
         action="conversation.created",
         resource_type="conversation",
@@ -41,34 +39,31 @@ async def create_conversation(
     return conversation
 
 
-async def get_conversation_or_404(db: AsyncSession, tenant_id: uuid.UUID, conversation_id: uuid.UUID) -> Conversation:
-    conversation = await repository.get_conversation(db, tenant_id, conversation_id)
+async def get_conversation_or_404(db: AsyncSession, conversation_id: uuid.UUID) -> Conversation:
+    conversation = await repository.get_conversation(db, conversation_id)
     if conversation is None:
         raise NotFoundError("Conversation not found")
     return conversation
 
 
 async def update_conversation(
-    db: AsyncSession,
-    *,
-    tenant_id: uuid.UUID,
-    conversation_id: uuid.UUID,
-    body: ConversationUpdateRequest,
-    actor_user_id: uuid.UUID | None,
+    db: AsyncSession, *, conversation_id: uuid.UUID, body: ConversationUpdateRequest, actor_user_id: uuid.UUID | None
 ) -> Conversation:
-    conversation = await get_conversation_or_404(db, tenant_id, conversation_id)
+    conversation = await get_conversation_or_404(db, conversation_id)
 
     updates = body.model_dump(exclude_unset=True)
+    before_state = {field: getattr(conversation, field) for field in updates}
     for field, value in updates.items():
         setattr(conversation, field, value)
 
     await record_audit_event(
         db,
-        tenant_id=tenant_id,
         actor_user_id=actor_user_id,
         action="conversation.updated",
         resource_type="conversation",
         resource_id=str(conversation.id),
+        before_state=before_state,
+        after_state=updates,
         metadata={"fields": list(updates.keys())},
     )
     await db.commit()
@@ -77,21 +72,15 @@ async def update_conversation(
 
 
 async def assign_conversation(
-    db: AsyncSession,
-    *,
-    tenant_id: uuid.UUID,
-    conversation_id: uuid.UUID,
-    agent_user_id: uuid.UUID,
-    actor_user_id: uuid.UUID | None,
+    db: AsyncSession, *, conversation_id: uuid.UUID, agent_user_id: uuid.UUID, actor_user_id: uuid.UUID | None
 ) -> Conversation:
-    conversation = await get_conversation_or_404(db, tenant_id, conversation_id)
+    conversation = await get_conversation_or_404(db, conversation_id)
     conversation.assigned_agent_id = agent_user_id
     if conversation.status == "open":
         conversation.status = "waiting_for_staff"
 
     await record_audit_event(
         db,
-        tenant_id=tenant_id,
         actor_user_id=actor_user_id,
         action="conversation.assigned",
         resource_type="conversation",
@@ -104,14 +93,9 @@ async def assign_conversation(
 
 
 async def change_status(
-    db: AsyncSession,
-    *,
-    tenant_id: uuid.UUID,
-    conversation_id: uuid.UUID,
-    new_status: str,
-    actor_user_id: uuid.UUID | None,
+    db: AsyncSession, *, conversation_id: uuid.UUID, new_status: str, actor_user_id: uuid.UUID | None
 ) -> Conversation:
-    conversation = await get_conversation_or_404(db, tenant_id, conversation_id)
+    conversation = await get_conversation_or_404(db, conversation_id)
     old_status = conversation.status
     conversation.status = new_status
 
@@ -124,11 +108,12 @@ async def change_status(
 
     await record_audit_event(
         db,
-        tenant_id=tenant_id,
         actor_user_id=actor_user_id,
         action="conversation.status_changed",
         resource_type="conversation",
         resource_id=str(conversation.id),
+        before_state={"status": old_status},
+        after_state={"status": new_status},
         metadata={"old_status": old_status, "new_status": new_status},
     )
     await db.commit()
@@ -137,35 +122,34 @@ async def change_status(
 
 
 async def close_conversation(
-    db: AsyncSession, *, tenant_id: uuid.UUID, conversation_id: uuid.UUID, actor_user_id: uuid.UUID | None
+    db: AsyncSession, *, conversation_id: uuid.UUID, actor_user_id: uuid.UUID | None
 ) -> Conversation:
-    return await change_status(
-        db, tenant_id=tenant_id, conversation_id=conversation_id, new_status="closed", actor_user_id=actor_user_id
-    )
+    return await change_status(db, conversation_id=conversation_id, new_status="closed", actor_user_id=actor_user_id)
 
 
 async def change_dialogue_state(
     db: AsyncSession,
     *,
-    tenant_id: uuid.UUID,
     conversation_id: uuid.UUID,
     new_state: str,
     changed_by: str,
     metadata: dict | None,
     actor_user_id: uuid.UUID | None,
 ) -> Conversation:
-    conversation = await get_conversation_or_404(db, tenant_id, conversation_id)
+    conversation = await get_conversation_or_404(db, conversation_id)
+    old_state = conversation.current_state
     await state_machine.transition_state(
         db, conversation=conversation, to_state=new_state, changed_by=changed_by, metadata=metadata
     )
 
     await record_audit_event(
         db,
-        tenant_id=tenant_id,
         actor_user_id=actor_user_id,
         action="conversation.state_changed",
         resource_type="conversation",
         resource_id=str(conversation.id),
+        before_state={"current_state": old_state},
+        after_state={"current_state": new_state},
         metadata={"to_state": new_state, "changed_by": changed_by},
     )
     await db.commit()

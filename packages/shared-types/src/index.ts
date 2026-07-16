@@ -19,15 +19,37 @@ export type ApiFailure = {
 
 export type ApiResponse<T> = ApiSuccess<T> | ApiFailure;
 
-export type TenantMembership = {
-  tenant_id: string;
-  tenant_name: string;
-  tenant_slug: string;
-  role: "owner" | "admin" | "manager" | "staff" | "read_only";
-};
-
+/** Single-resort deployment (docs/product_decisions.md) — no tenant/role
+ * concept; a verified session is sufficient for full access. */
 export type CurrentUser = {
   user_id: string;
   email: string;
-  memberships: TenantMembership[];
+  resort_configured: boolean;
+};
+
+export type ResortSettings = {
+  id: string;
+  resort_name: string;
+  legal_name: string | null;
+  description: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  postal_code: string | null;
+  phone: string | null;
+  email: string | null;
+  whatsapp: string | null;
+  timezone: string;
+  currency: string;
+  default_language: string;
+  check_in_time: string | null;
+  check_out_time: string | null;
+  logo_url: string | null;
+  primary_brand_color: string | null;
+  secondary_brand_color: string | null;
+  website_url: string | null;
+  settings_metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
 };
