@@ -14,6 +14,7 @@ from app.errors import UnauthorizedError
 from app.rate_limit import enforce_rate_limit
 from app.tenants.service import list_my_tenants
 from app.users.models import User
+from app.users.service import upsert_user_from_identity
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -28,6 +29,7 @@ async def login(
     tokens = await service.login(body.email, body.password)
 
     identity = verify_access_token(tokens["access_token"])
+    await upsert_user_from_identity(db, identity)
     await record_audit_event(
         db,
         tenant_id=None,

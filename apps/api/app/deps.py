@@ -11,6 +11,7 @@ from app.errors import ForbiddenError, UnauthorizedError
 from app.logging import tenant_id_var, user_id_var
 from app.tenants.models import TenantMember
 from app.users.models import User
+from app.users.service import upsert_user_from_identity
 
 
 async def get_verified_identity(authorization: str | None = Header(default=None)) -> VerifiedIdentity:
@@ -26,19 +27,16 @@ async def get_current_user(
     identity: VerifiedIdentity = Depends(get_verified_identity),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Resolve (and lazily upsert) the profile row for a verified identity.
+    """Resolve the profile row for a verified identity.
 
-    The row is created on first sight of a given Supabase user id rather
-    than via a webhook, keeping Phase 1 simple; a Supabase Auth webhook can
-    replace this upsert-on-read pattern later without changing callers.
+    Login (app.auth.router.login) is expected to have already created this
+    row via app.users.service.upsert_user_from_identity; the upsert here is
+    a defense-in-depth fallback, not the primary creation path — it must
+    not be the *only* place this happens, since several endpoints (e.g.
+    audit logging during login itself) need the row to exist before this
+    dependency is ever reached.
     """
-    user = await db.get(User, uuid.UUID(identity.user_id))
-    if user is None:
-        user = User(id=uuid.UUID(identity.user_id), email=identity.email or f"{identity.user_id}@unknown.local")
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-    return user
+    return await upsert_user_from_identity(db, identity)
 
 
 @dataclass(frozen=True)
