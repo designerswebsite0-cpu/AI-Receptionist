@@ -71,6 +71,17 @@ class Settings(BaseSettings):
     orchestration_provider_failure_threshold: int = 3
     orchestration_provider_cooldown_seconds: int = 60
 
+    # Phase 5: Website Chat Channel — public, anonymous-guest surface.
+    # Limits are read from here (not hard-coded in the router) so ops can
+    # tune them per deployment without a code change.
+    webchat_enabled: bool = True
+    webchat_allowed_origins: str = "http://localhost:3000"
+    webchat_session_ttl_seconds: int = 60 * 60 * 24 * 7  # 7 days
+    webchat_max_message_length: int = 2000
+    webchat_rate_limit_per_minute: int = 8  # messages, per session
+    webchat_conversation_limit_per_ip_per_hour: int = 5  # new sessions, per IP
+    webchat_message_limit_per_ip_per_minute: int = 20  # burst guard across sessions, per IP
+
     # Monitoring (optional)
     sentry_dsn: str | None = None
     better_stack_token: str | None = None
@@ -87,6 +98,10 @@ class Settings(BaseSettings):
     @property
     def cors_allowed_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
+
+    @property
+    def webchat_allowed_origins_list(self) -> list[str]:
+        return [origin.strip() for origin in self.webchat_allowed_origins.split(",") if origin.strip()]
 
     @property
     def supabase_jwks_url(self) -> str:

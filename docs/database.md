@@ -305,6 +305,36 @@ be wrong for a future, unrelated stay.
 
 ---
 
+# 10a. Website Chat Module (Phase 5)
+
+> Added 2026-07-18 (Phase 5 completion). One new table — anonymous guest
+> chat reuses the existing `customers`/`conversations`/`messages` schema
+> unchanged (a webchat guest is just a `Customer` with zero contacts and a
+> `Conversation` where `channel="webchat"`, already valid since Phase 2).
+
+Tables
+
+- **webchat_sessions** (migration `0024`) — resolves an anonymous
+  browser's opaque session token to a `(customer_id, conversation_id)`
+  pair. Stores `token_hash` (SHA-256 of the raw token) only — never the
+  raw token itself, same principle as a password hash. Columns:
+  `token_hash` (unique, indexed), `customer_id` (FK → `customers`,
+  `RESTRICT`), `conversation_id` (FK → `conversations`, `CASCADE`),
+  `last_seen_at`, `expires_at` (indexed), `revoked_at` (nullable),
+  `session_metadata` (JSONB, currently unused reserved bucket).
+
+RLS: same `auth.uid() IS NOT NULL` pattern as every other table since
+migration `0009` — the FastAPI backend's service_role connection bypasses
+RLS and is the real authorization gate (it resolves sessions by hashing
+the guest's token, never by trusting a client-supplied id); anonymous
+guests never hold a Supabase auth session at all, so this policy
+correctly means the table is unreadable via any direct Postgres/PostgREST
+path by anyone but the backend itself.
+
+Full design rationale: [docs/phase-5/WEBCHAT_ARCHITECTURE.md](phase-5/WEBCHAT_ARCHITECTURE.md).
+
+---
+
 # 11. Audit Module
 
 Tables

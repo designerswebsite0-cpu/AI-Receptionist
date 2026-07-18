@@ -67,6 +67,7 @@ from app.messages.models import Message, MessageAttachment  # noqa: F401
 from app.orchestration.models import OrchestrationTurn, ServiceRequest  # noqa: F401
 from app.resort.models import ResortSettings  # noqa: F401
 from app.users.models import User  # noqa: F401
+from app.webchat.models import WebchatSession  # noqa: F401
 
 # CRITICAL SAFETY BOUNDARY — read before touching this fixture.
 #

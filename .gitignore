@@ -43,3 +43,9 @@ htmlcov/
 
 # Raw knowledge corpus (large source docs, already ingested into DB)
 RKPR_RAG_FINAL_DOCS/
+
+# The resort website is its own separate repo/deployment
+# (github.com/designerswebsite0-cpu/RKPR-WEBSITE) — kept on disk here for
+# convenient local development against this same backend, but never part
+# of this repo's history.
+/apps/website/

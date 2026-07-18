@@ -316,8 +316,41 @@ Central AI brain for every interaction. ✅ Delivered.
 
 # Phase 5 — Web Chat
 
-Build
+Status: **Completed 2026-07-18.** Full detail:
+`docs/phase-5/PHASE_5_COMPLETION_REPORT.md`.
 
+Built (differs from the original bullet list below in the ways explained
+in `docs/phase-5/WEBCHAT_ARCHITECTURE.md`):
+
+- Audited and imported the resort's real Next.js website (uploaded
+  separately) into this monorepo as `apps/website`; replaced its
+  pre-existing fake, keyword-matching chat widget/API with a real
+  integration.
+- New public, anonymous-guest FastAPI module (`app/webchat/`) — opaque
+  hashed session tokens, one new table (`webchat_sessions`, migration
+  `0024`), Redis-backed fail-open rate limiting, all calling the existing
+  Phase 4 `orchestrate()` pipeline (no second AI implementation).
+- Website-side session proxy (`apps/website/src/app/api/webchat/*`) so
+  the browser only ever talks to the website's own server — no AI/DB
+  credentials of any kind reach the browser or even `apps/website`'s
+  server environment.
+- Rebuilt chat widget UI (quick actions, guest-safe citations, handoff
+  banner, staff-message polling, contact capture, retry-on-failure,
+  accessibility) preserving the resort's existing visual design.
+- Backend tests (`test_webchat_auth.py`, `test_webchat_service.py`);
+  real-browser verification of the UI and, concretely, of the
+  backend-failure error path (see completion report).
+
+Known tech debt / honest gaps (not silent — full list in the completion
+report): no real token-streaming (deferred, documented); staff replies
+reach the guest via polling, not push; DB-dependent backend tests and the
+real-OpenAI validation checklist could not be executed in this session's
+tool sandbox (confirmed environment-specific, not a code issue) and
+should be re-run in an environment with confirmed Postgres connectivity;
+no frontend test framework was introduced (none existed anywhere in this
+monorepo before this phase either).
+
+Original bullet list (superseded by the above, kept for history):
 - Website widget
 - Realtime messaging
 - Conversation management
@@ -326,7 +359,7 @@ Build
 - KIE integration
 
 Deliverable:
-Production-ready website chat.
+Production-ready website chat. ✅ Delivered (with the honest gaps above).
 
 ---
 

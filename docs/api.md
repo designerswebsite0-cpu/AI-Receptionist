@@ -149,9 +149,37 @@ POST /api/v1/whatsapp/template
 
 # Web Chat
 
-POST /api/v1/widget/session
-POST /api/v1/widget/message
-GET  /api/v1/widget/config
+Status: **Implemented** (Phase 5, 2026-07-18; `app/webchat/router.py`).
+Full contract, session model, and error codes:
+[docs/phase-5/WEBCHAT_API_CONTRACT.md](phase-5/WEBCHAT_API_CONTRACT.md).
+
+The original Phase 1 placeholder shape below (`/widget/*`) was never
+implemented and is superseded by the real Phase 5 contract — kept struck
+through only as a historical note, not a live surface:
+
+~~POST /api/v1/widget/session~~
+~~POST /api/v1/widget/message~~
+~~GET  /api/v1/widget/config~~
+
+Real, implemented endpoints (public, anonymous-guest — auth is an opaque
+session token, not a Supabase JWT):
+
+```
+POST   /api/v1/webchat/sessions
+GET    /api/v1/webchat/sessions/{session_id}
+DELETE /api/v1/webchat/sessions/{session_id}
+POST   /api/v1/webchat/sessions/{session_id}/messages
+GET    /api/v1/webchat/sessions/{session_id}/messages
+POST   /api/v1/webchat/sessions/{session_id}/handoff
+POST   /api/v1/webchat/sessions/{session_id}/feedback
+POST   /api/v1/webchat/sessions/{session_id}/contact
+```
+
+These are called server-to-server by `apps/website`'s own Next.js Route
+Handlers (`/api/webchat/*`) — the resort website's browser code never
+calls this API directly. Every message ultimately runs through the same
+`app.orchestration.pipeline.orchestrate()` the AI Orchestration section
+below documents; no second AI implementation exists for this channel.
 
 ---
 

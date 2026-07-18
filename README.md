@@ -20,7 +20,12 @@ they are the binding engineering and security specifications for this repo.
 apps/
   api/          FastAPI backend (modular monolith)
   dashboard/    Next.js staff dashboard
-  widget/       Embeddable web-chat widget (Phase 5)
+  website/      The resort's own Next.js website, incl. the guest-facing
+                AI chat widget (Phase 5) — imported from an uploaded
+                codebase; see docs/phase-5/WEBSITE_CODEBASE_AUDIT.md
+  widget/       Reserved for a future *embeddable* third-party widget
+                package — a different concept from apps/website's own
+                full site (not yet built)
   voice-agent/  LiveKit voice agent (Phase 9)
 packages/
   shared-types/   TypeScript types shared by dashboard/widget
@@ -56,6 +61,18 @@ Database-dependent tests automatically skip unless `DATABASE_URL` is set.
 ```bash
 npm install
 npm run dashboard:dev
+```
+
+### Website (`apps/website`)
+
+The resort's public website, including the guest-facing AI chat widget.
+Needs no AI/database credentials of its own — its Route Handlers proxy
+chat requests server-to-server to `apps/api` (see
+`docs/phase-5/WEBCHAT_ARCHITECTURE.md`).
+
+```bash
+npm install
+npm run dev -w apps/website -- -p 3100   # 3100 avoids colliding with the dashboard's default 3000
 ```
 
 ## Deploying a new resort

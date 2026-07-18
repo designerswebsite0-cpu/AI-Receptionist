@@ -5,6 +5,99 @@
 
 ---
 
+## 2026-07-18 — Phase 5: Website Chat Channel — key decisions
+
+**Where the uploaded website codebase landed.** The resort's real website
+(`RKPR-WEBSITE-main.zip`, uploaded separately, no `.git` history — a
+GitHub branch export) was imported into this monorepo as a new npm
+workspace, `apps/website`, rather than kept as a standalone repo. It
+needed to share this platform's env-var conventions, CI, and deployment
+story, and Phase 5's own audit (`docs/phase-5/WEBSITE_CODEBASE_AUDIT.md`)
+found nothing that argued for keeping it separate. The pre-existing empty
+`apps/widget` placeholder (reserved since Phase 1 for a future
+*embeddable* third-party widget) was left untouched — different concept
+from a resort's own full site.
+
+**The existing chat widget was fake and was replaced, not extended.** The
+uploaded site already had a polished, on-brand `ChatWidget.tsx`
+("Aranya"), but it posted to a Next.js route that was ~170 lines of
+keyword-matching fabricating specific room rates, spa prices, and canned
+escalation messages — zero connection to any LLM, database, or the real
+Phase 4 pipeline. This directly violated `docs/CLAUDE.md`'s "never invent
+prices/policies" rule. The widget's JSX/animation/visual identity was
+reused; its entire data layer was rebuilt from scratch against the real
+`app.orchestration.pipeline.orchestrate()`.
+
+**Browser never talks to FastAPI directly.** `apps/website`'s own Next.js
+server proxies every webchat call server-to-server
+(`apps/website/src/lib/server-webchat.ts` → FastAPI's
+`/api/v1/webchat/*`) — the same shape `apps/dashboard` already uses for
+its own staff-facing calls. This means `apps/website` never holds any
+AI/database credential, and the guest's session token lives only in an
+`HttpOnly` cookie the Next.js server manages, never in browser-readable
+storage. Full rationale: `docs/phase-5/WEBCHAT_ARCHITECTURE.md`.
+
+**Reused `"webchat"` as the channel value, not `"website_chat"`** (the
+brief's suggested name) — `app.conversations.constants.CHANNELS` already
+had `"webchat"` from Phase 4's `ProcessMessageRequest.channel` default.
+Reusing an existing valid value avoided a needless migration.
+
+**One new table, not a redesign.** `webchat_sessions` (migration `0024`)
+maps a SHA-256 token hash to `(customer_id, conversation_id)` — the same
+"never store the raw secret" principle as a password hash. No changes
+were needed to `customers`/`conversations`/`messages`: an anonymous guest
+is already fully representable as a `Customer` with zero contacts plus a
+`Conversation` where `channel="webchat"` (Phase 2 schema, unchanged).
+
+**Guest-initiated handoff reuses staff-handoff primitives, not a second
+implementation.** The "Speak to staff" quick action calls a dedicated
+`POST /handoff` endpoint that invokes the exact same
+`flow_engine.apply_handoff` + `conversations_service` state-transition
+calls the staff-facing forced-handoff endpoint already uses — only
+`changed_by="system"` differs (a guest is neither `"ai"` nor `"human"`
+staff in `STATE_CHANGED_BY`'s existing vocabulary).
+
+**Streaming deferred, not faked.** `orchestrate()` has no token-level
+streaming path, and retrofitting one would touch a pipeline just
+hardened and real-data-validated in Phase 4. Per the brief's own
+instruction against fragile fake-streaming shims, the widget shows a
+clean typing indicator and renders one complete response — a documented
+deferral, not a workaround.
+
+**Staff replies reach the guest via polling, not push.** There's no
+websocket/SSE transport in this stack yet. While the widget is open it
+polls the transcript every 10s and appends new non-guest messages — an
+explicit, temporary stand-in for real-time delivery, not a permanent
+design choice.
+
+**Pre-existing lint debt in the uploaded website was fixed, not left.**
+`npm run website:lint` surfaced 33 pre-existing errors/57 warnings
+(unescaped JSX apostrophes, unused imports, one `no-explicit-any`, one
+`react-hooks/set-state-in-effect`) across ~20 files unrelated to the chat
+work. These were fixed as a small, mechanical, non-visual cleanup
+(escaping characters, removing dead imports, converting one effect-based
+state seed into a `useState` initializer) so the new `website` CI job
+would be meaningful — explicitly not a redesign, and independently
+re-verified (lint + build both clean) rather than taken on faith.
+
+**DB connectivity limitation in this session's tool sandbox.** Raw
+Postgres TCP connections to the project's Supabase pooler failed
+throughout this phase's work (`WinError 1225`), identically on the
+pre-existing, previously-passing Phase 3/4 pytest suite — confirmed
+environment-specific (a direct `Test-NetConnection` probe succeeded at
+the TCP layer; only the actual Postgres wire-protocol connection failed),
+not a regression introduced here. This blocked running the new
+DB-dependent webchat tests and the real-OpenAI validation checklist in
+this session. Real-browser verification did confirm the backend starts
+correctly, reaches Supabase's HTTPS API successfully, and — when the
+in-process database call then fails — returns a safe, generic,
+non-technical error to the guest rather than any stack trace or SQL
+detail, a genuine (if partial) live confirmation of the error-handling
+design. Full detail: `docs/phase-5/WEBCHAT_TEST_PLAN.md` and
+`docs/phase-5/PHASE_5_COMPLETION_REPORT.md`.
+
+---
+
 ## 2026-07-18 — Phase 4: AI Orchestration — key decisions and a real incident
 
 **Database-destruction incident and the permanent fix.** Mid-phase, a test

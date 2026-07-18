@@ -472,6 +472,21 @@ unofficial WhatsApp Web automation.
 
 5.3 Website chat flow
 
+> **Updated 2026-07-18 (Phase 5 completion)** — this describes what was
+> actually built, which differs from the original plan below in three
+> ways: (1) the chat is integrated directly into the resort's own
+> existing Next.js website (`apps/website`) rather than shipped as a
+> separate embeddable widget package; (2) the browser never calls
+> FastAPI directly — the website's own server proxies every call
+> server-to-server, so no signed domain-bound token scheme was needed
+> (see `docs/phase-5/WEBCHAT_ARCHITECTURE.md`); (3) responses are a
+> single complete request/response, not SSE streaming — real streaming
+> was deliberately deferred rather than faked (see the same doc's
+> "Streaming" section). The original aspirational flow is kept below for
+> historical context; treat `docs/phase-5/WEBCHAT_ARCHITECTURE.md` and
+> `docs/phase-5/WEBCHAT_API_CONTRACT.md` as authoritative for the real
+> implementation.
+
 A client website loads the Vercel-hosted widget.
 
 The widget obtains a signed domain-bound session token.
