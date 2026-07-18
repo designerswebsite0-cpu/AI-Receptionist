@@ -20,9 +20,15 @@ COPY alembic.ini ./alembic.ini
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    PORT=8000
 
 USER app
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Shell form (not exec-form CMD ["..."]) so $PORT actually expands — Railway
+# assigns a dynamic port via this env var and routes public traffic to
+# whatever the container actually binds, not to the Dockerfile's EXPOSE
+# value. Defaults to 8000 for plain `docker run` / other hosts that don't
+# set PORT.
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
