@@ -14,7 +14,20 @@ from app.config import get_settings  # noqa: E402
 from app.conversations.models import Conversation, ConversationStateEvent  # noqa: E402,F401
 from app.customers.models import Customer, CustomerContact, CustomerNote, CustomerTag  # noqa: E402,F401
 from app.database import Base  # noqa: E402
+from app.knowledge.models import (  # noqa: E402,F401
+    KnowledgeBenchmarkQuestion,
+    KnowledgeChunk,
+    KnowledgeConflict,
+    KnowledgeIngestionJob,
+    KnowledgeMedia,
+    KnowledgeRetrievalLog,
+    KnowledgeSearchFeedback,
+    KnowledgeSource,
+    KnowledgeSourceVersion,
+    WebsiteCrawlRun,
+)
 from app.messages.models import Message, MessageAttachment  # noqa: E402,F401
+from app.orchestration.models import OrchestrationTurn, ServiceRequest  # noqa: E402,F401
 from app.resort.models import ResortSettings  # noqa: E402,F401
 from app.users.models import User  # noqa: E402,F401
 

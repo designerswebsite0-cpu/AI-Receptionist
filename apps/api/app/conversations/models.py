@@ -25,6 +25,7 @@ class Conversation(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     channel: Mapped[str] = mapped_column(String(20), nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="open", index=True)
     current_state: Mapped[str] = mapped_column(String(30), nullable=False, default="greeting")
+    flow_state: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     assigned_agent_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )

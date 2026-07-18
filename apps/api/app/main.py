@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 
@@ -7,12 +9,29 @@ from app.conversations.router import router as conversations_router
 from app.customers.router import router as customers_router
 from app.errors import register_exception_handlers
 from app.health.router import router as health_router
-from app.logging import configure_logging
+from app.knowledge.router import router as knowledge_router
+from app.knowledge.storage import ensure_bucket_exists
+from app.logging import configure_logging, get_logger
 from app.middleware import RequestContextMiddleware
+from app.orchestration.router import router as orchestration_router
 from app.resort.router import router as resort_router
 
 settings = get_settings()
 configure_logging("DEBUG" if settings.app_env == "development" else "INFO")
+logger = get_logger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    try:
+        await ensure_bucket_exists()
+    except Exception:
+        # Non-fatal: see ensure_bucket_exists' own logging. Startup must not
+        # crash over a Storage hiccup — upload calls will surface a real
+        # StorageError if the bucket genuinely doesn't exist.
+        logger.exception("knowledge_bucket_ensure_raised")
+    yield
+
 
 app = FastAPI(
     title="AI Receptionist API",
@@ -21,6 +40,7 @@ app = FastAPI(
         "Single-resort AI Receptionist backend (WhatsApp, Website Chat, future Voice) — "
         "reusable as a deployment template; each deployment serves exactly one resort."
     ),
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -39,3 +59,5 @@ app.include_router(auth_router)
 app.include_router(resort_router)
 app.include_router(customers_router)
 app.include_router(conversations_router)
+app.include_router(knowledge_router)
+app.include_router(orchestration_router)

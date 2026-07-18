@@ -15,6 +15,23 @@ dependencies = [
     "alembic>=1.13,<2.0",
     "httpx>=0.27,<1.0",
     "pyjwt[crypto]>=2.9,<3.0",
+    # --- Phase 3: Knowledge Intelligence Engine ---
+    "pgvector>=0.3,<1.0",            # vector column type for SQLAlchemy/Alembic
+    "openai>=1.54,<2.0",             # embeddings (text-embedding-3-large)
+    "pymupdf>=1.24,<2.0",            # PDF text extraction + text-density probing
+    "python-docx>=1.1,<2.0",         # DOCX extraction
+    "openpyxl>=3.1,<4.0",            # XLSX extraction + governance register import
+    "beautifulsoup4>=4.12,<5.0",     # HTML main-content extraction
+    # lxml floor is 6.0.2, not the resolver's default: python-docx pulls lxml
+    # in transitively, and only >=6.0.1 publishes prebuilt cp314 Windows
+    # wheels. Older versions try to compile from source and fail on a dev box
+    # without MSVC build tools. See docs/product_decisions.md.
+    "lxml>=6.0.2,<7.0",
+    "pillow>=11.0,<12.0",            # image metadata/dimension validation
+    "pytesseract>=0.3.13,<1.0",      # OCR engine binding (Tesseract)
+    "tiktoken>=0.8,<1.0",            # token-aware chunking
+    "redis>=5.2,<6.0",               # ingestion queue / locks / progress
+    "python-multipart>=0.0.12,<1.0", # required by FastAPI for multipart file-upload endpoints
 ]
 
 [dependency-groups]

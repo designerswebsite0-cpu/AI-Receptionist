@@ -14,7 +14,10 @@ jobs:
         working-directory: apps/api
     services:
       postgres:
-        image: postgres:16
+        # pgvector/pgvector:pg16 is postgres:16 plus the pgvector extension
+        # pre-compiled — plain postgres:16 doesn't have it, and Phase 3's
+        # knowledge_chunks.embedding column (migration 0013) requires it.
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres

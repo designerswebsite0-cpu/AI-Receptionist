@@ -8,11 +8,24 @@ from httpx import ASGITransport, AsyncClient
 
 from app.main import app
 
+_DUMMY_UUID = "00000000-0000-0000-0000-000000000000"
+
 PROTECTED_ENDPOINTS = [
     ("GET", "/api/v1/auth/me"),
     ("GET", "/api/v1/resort/settings"),
     ("GET", "/api/v1/customers"),
     ("GET", "/api/v1/conversations"),
+    ("GET", "/api/v1/knowledge/sources"),
+    ("GET", "/api/v1/knowledge/jobs"),
+    ("POST", "/api/v1/knowledge/search"),
+    ("POST", f"/api/v1/orchestration/messages/{_DUMMY_UUID}/process"),
+    ("GET", f"/api/v1/orchestration/conversations/{_DUMMY_UUID}/state"),
+    ("GET", f"/api/v1/orchestration/conversations/{_DUMMY_UUID}/turns"),
+    ("GET", f"/api/v1/orchestration/turns/{_DUMMY_UUID}/citations"),
+    ("GET", f"/api/v1/orchestration/turns/{_DUMMY_UUID}/tool-executions"),
+    ("POST", f"/api/v1/orchestration/conversations/{_DUMMY_UUID}/handoff"),
+    ("POST", f"/api/v1/orchestration/conversations/{_DUMMY_UUID}/release"),
+    ("GET", "/api/v1/orchestration/health/providers"),
 ]
 
 

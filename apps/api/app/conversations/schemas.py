@@ -74,6 +74,7 @@ class ConversationOut(BaseModel):
     channel: str
     status: str
     current_state: str
+    flow_state: str | None
     assigned_agent_id: uuid.UUID | None
     priority: str
     started_at: datetime

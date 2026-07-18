@@ -155,25 +155,79 @@ Future LiveKit integration.
 
 # 7. Knowledge Intelligence Engine
 
-Tables
+Status: **Implemented** (Phase 3, 2026-07-18; migrations `0010`-`0019`).
+The table list below is the actual implemented schema — it diverges from
+this section's original pre-Phase-3 draft in a few places, reconciled
+here rather than left silently inconsistent (per CLAUDE.md's "explain the
+conflict, update documentation"):
 
-- knowledge_sources
-- knowledge_source_versions
-- knowledge_documents
-- knowledge_chunks
-- knowledge_embeddings
-- knowledge_entities
-- knowledge_keywords
-- knowledge_tags
-- knowledge_jobs
-- knowledge_job_logs
-- knowledge_feedback
-- knowledge_search_logs
-- knowledge_missing_answers
-- knowledge_retrieval_logs
-- knowledge_citations
+- `knowledge_embeddings` was never a separate table — the embedding vector
+  lives inline as `knowledge_chunks.embedding` (pgvector). A chunk without
+  an embedding yet is still a real, queryable row (full-text search works
+  on it immediately); splitting embeddings into their own table would have
+  meant an extra join on every single retrieval query for no benefit.
+- `knowledge_documents`, `knowledge_entities`, `knowledge_keywords`,
+  `knowledge_tags`, `knowledge_missing_answers`, `knowledge_citations`,
+  `knowledge_job_logs` were draft names for concepts the actual brief
+  covers differently: `knowledge_sources` + `knowledge_source_versions`
+  cover "documents"; entity/keyword data lives in
+  `knowledge_chunks.entity_metadata` (JSONB, per-chunk, not a separate
+  normalized table); citations are assembled at query time from
+  `knowledge_sources`/`knowledge_chunks`, not stored; job progress lives
+  directly on `knowledge_ingestion_jobs` (no separate log table).
+- `knowledge_jobs` → `knowledge_ingestion_jobs` (renamed to disambiguate
+  from other job types elsewhere in the system).
+- `knowledge_feedback`/`knowledge_search_logs` → `knowledge_search_feedback`
+  / `knowledge_retrieval_logs` (renamed, same purpose).
+- New tables the original draft didn't anticipate: `knowledge_media`
+  (extracted/standalone images with rights/caption metadata),
+  `knowledge_conflicts` and `knowledge_benchmark_questions` (governance
+  register imports — conflict resolution and evaluation questions),
+  `website_crawl_runs` (one row per website-crawl execution).
+
+Tables (actual)
+
+- `knowledge_sources` — one row per governed knowledge asset (document,
+  website registration, dataset). Governance columns (`visibility`,
+  `source_priority`, `authoritative`, `retrieval_enabled`,
+  `approval_status`, `processing_status`, `malware_scan_status`) drive
+  both ingestion eligibility and retrieval filtering.
+- `knowledge_source_versions` — one row per (re)processing run; stores
+  `raw_text`/`normalized_text`, extraction metadata, OCR usage/confidence.
+  `knowledge_sources.current_version_id` points at the current one.
+- `knowledge_chunks` — the retrieval unit. `embedding vector(1536)`
+  (pgvector HNSW-indexed, cosine distance), a GIN full-text index on
+  `content_normalized`, and denormalized governance columns
+  (`visibility`, `source_priority`, `authoritative`, `retrieval_enabled`,
+  `effective_date`, `expiry_date`) copied from the parent source at
+  chunk-creation time so the guest-facing retrieval query never needs to
+  join `knowledge_sources` — see rule 15 below.
+- `knowledge_media` — extracted or standalone images with
+  rights/caption/dimension metadata, optionally linked to a parent source.
+- `knowledge_ingestion_jobs` — durable job-tracking row for every
+  pipeline run (upload, website_crawl, governance_import, etc.), written
+  identically regardless of which queue backend executes it.
+- `knowledge_retrieval_logs` / `knowledge_search_feedback` — every
+  retrieval call logged with query/classification/latency/results; staff
+  can rate a specific returned chunk's usefulness after the fact.
+- `knowledge_conflicts` / `knowledge_benchmark_questions` — imported from
+  the governance register's Conflicting Information Register and Common
+  Guest Questions Dataset; the benchmark table also stores
+  `last_run_result`/`last_run_at` from the automated benchmark runner.
+- `website_crawl_runs` — one row per crawl execution; `crawl_summary`
+  (JSONB) records the actual per-page result (URL, canonical URL, HTTP
+  status, content hash) for every page attempted.
 
 Shared by BOTH chat and calls.
+
+Guest-safety rule (15): the guest-facing retrieval query filters on
+`visibility = 'guest' AND retrieval_enabled = true AND status = 'active'
+AND (expiry_date IS NULL OR expiry_date >= now())` directly in the SQL
+`WHERE` clause of every guest query — never a post-filter in application
+code, and never left to an LLM prompt instruction alone. RLS on these
+tables (migration `0019`) is defense-in-depth for direct-Postgres access
+only, matching the single-resort `auth.uid() IS NOT NULL` pattern used
+everywhere else — it is not the guest/staff boundary itself.
 
 ---
 
@@ -212,16 +266,42 @@ Tables
 
 # 10. AI Module
 
+> Updated 2026-07-18 (Phase 4 completion) — this section describes what was
+> actually built, not the original 8-table aspirational list. Deliberately
+> minimal: 2 new tables, not one per hypothetical concept
+> (docs/phase-4/PHASE_4_IMPLEMENTATION_PLAN.md §2 explains the reasoning).
+
 Tables
 
-- ai_requests
-- ai_responses
-- tool_calls
-- tool_results
-- prompt_versions
-- system_prompts
-- model_usage
-- fallback_logs
+- **orchestration_turns** — one row per pipeline run (a single guest
+  message through classify → retrieve → generate → validate). Stores the
+  operationally useful decision trace only — detected intent + confidence,
+  extracted entities, missing-info gaps, retrieval query + citations
+  (chunk id/title/priority/authoritative/score, never raw content),
+  proposed tool name/input/output/status, handoff required/reason/
+  priority/department, response-validation result, provider/model/
+  latency/token usage, error code/message. **Never stores chain-of-thought**
+  — this is a decision summary, not the model's reasoning trace.
+- **service_requests** — the generic "safe enquiry recorded, not a
+  completed operation" record every `create_*_enquiry` tool writes into
+  (booking/dining/spa/activity/transfer/general/complaint). One table for
+  all domains rather than one per domain — real per-domain business-action
+  integrations are Phase 7 scope.
+
+`conversations.flow_state` (added by migration `0020`) is a finer-grained
+sub-state *within* one of the canonical 11 `DIALOGUE_STATES` from §5 — it
+refines, and never replaces, `current_state`.
+
+Customer 360 memory (`app.orchestration.memory`) writes AI-inferred guest
+preferences into `customers.resort_preferences["ai_inferred"]` — a
+namespaced sub-key kept structurally separate from anything staff enter
+directly, so an AI inference can never be mistaken for (or silently
+overwrite) verified data. Only a fixed, curated vocabulary of durable
+preferences is ever written this way (dietary restrictions, allergies,
+view preference, room category, accessibility needs, meal plan, language,
+guest name) — stay-specific transactional details (check-in dates, booking
+references) are deliberately never persisted as "memory," since they would
+be wrong for a future, unrelated stay.
 
 ---
 

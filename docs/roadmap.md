@@ -194,37 +194,123 @@ Known Phase 2.5 tech debt (tracked, not silent):
 
 # Phase 3 — Knowledge Intelligence Engine (KIE)
 
-Build
+Status: **Implemented and verified** (2026-07-18) — see
+docs/phase-3/IMPLEMENTATION_PLAN.md and
+docs/phase-3/PHASE_3_COMPLETION_REPORT.md for full detail. Real RKPR
+corpus import (`--execute`) and the benchmark run are built and dry-run
+verified against the real corpus, but not yet executed against the live
+Supabase project — blocked on the deployment owner adding a real
+`OPENAI_API_KEY` (embedding calls cost money; this was deliberately not
+run without that explicit go-ahead).
 
-- Document upload
-- Website ingestion
-- OCR
-- Chunking
-- Metadata extraction
-- Embeddings
-- Hybrid retrieval
-- Knowledge dashboard
-- Versioning
-- Search analytics
+Built
+
+- [x] Document upload (PDF/DOCX/XLSX/CSV/HTML/TXT/images), MIME + magic-byte
+  validation, ZIP-bomb/size-limit guards, filename sanitization
+- [x] Website ingestion — sitemap-then-links crawler for the live RKPR site,
+  with a URL-rebasing fix for two confirmed real bugs (sitemap `<loc>` and
+  robots.txt `Sitemap:` both pointing at `localhost:3000` instead of the
+  real domain)
+- [x] OCR — Tesseract binding with an honest "unavailable" path (no
+  Tesseract on this dev machine; verified the fail-closed/fail-honest
+  behavior directly rather than assuming it)
+- [x] Chunking — token-aware generic chunker, FAQ Q/A-pair chunker (with a
+  fixed real bug: documents mixing FAQ sections with other content no
+  longer lose the non-FAQ content), table-row chunker for spreadsheets
+- [x] Metadata extraction + governance import — multi-strategy matching
+  between the Knowledge Source Register and the actual file layout (the
+  register uses a pre-reorganization folder structure); vocabulary
+  normalization for real register values that don't match its own
+  documented vocabulary (e.g. "Supplementary" priority, "Approved
+  (Archived)" approval status)
+- [x] Embeddings — OpenAI `text-embedding-3-large` truncated to 1536 dims
+  (pgvector's HNSW index caps at 2000; discovered live against the
+  connected Supabase project), incremental re-embedding by content hash,
+  deterministic MockEmbeddingProvider for the entire test suite
+- [x] Hybrid retrieval — pgvector cosine similarity + PostgreSQL full-text
+  search, governance-weighted scoring (priority/authoritative/entity
+  match), guest-safety enforced at the SQL query level (visibility,
+  retrieval_enabled, status, expiry — never a Python post-filter), plus a
+  lexical-overlap reranker
+- [x] Knowledge dashboard — sources list/detail/governance actions, upload
+  form, search playground, ingestion jobs list, website crawl trigger
+- [x] Versioning — `knowledge_source_versions` per (re)processing run,
+  idempotent re-ingestion via deterministic chunk keys
+- [x] Search analytics — every retrieval call logged to
+  `knowledge_retrieval_logs` with classification/latency/results
+- [x] Malware scanning — ClamAV client, fail-closed in production when
+  unreachable, explicit `unscanned_dev_only` label in development (never
+  silently "clean")
+- [x] Benchmark evaluation — scores every `knowledge_benchmark_questions`
+  row against real retrieval output via lexical overlap (no LLM-judge,
+  consistent with this phase's "no full answer-generation agent" boundary)
 
 Deliverable:
 Businesses upload knowledge once; chat and calls share it.
+
+Known Phase 3 tech debt (tracked, not silent):
+
+- ~~Real embedding-backed RKPR import and benchmark run~~ — **done
+  2026-07-18**: real import (19 sources, 187 chunks embedded via real
+  `text-embedding-3-large`) and real benchmark (49/50, 98% pass rate)
+  both executed for real. See `docs/phase-3/PHASE_3_COMPLETION_REPORT.md`
+  §7.
+- Redis is now connected and verified (see
+  `docs/incidents/DATABASE_RECOVERY_REPORT.md`), but still has no real
+  consumer wired up (declared dependency, unused in app code) — rate
+  limiting remains the in-process placeholder documented in Phase 1.
+  ClamAV/Tesseract are still not installed on this dev machine — the
+  malware scanner and OCR provider have real implementations plus a
+  documented, honest degraded-mode path (`unscanned_dev_only` /
+  "OCR provider unavailable"); only verified via unit tests and the real
+  corpus import's fail-honest behavior, not full live integration.
+- Dashboard pages pass lint/typecheck/build but weren't clicked through
+  live in a browser this session — no test Supabase login credentials were
+  available to authenticate past `/login`.
+- No answer-generation agent (deliberately out of scope this phase); the
+  search playground and benchmark runner are the only consumers of
+  retrieval right now.
 
 ---
 
 # Phase 4 — AI Orchestration
 
-Build
+> Status: **Complete** (2026-07-18). See
+> `docs/phase-4/PHASE_4_COMPLETION_REPORT.md` for what was actually built,
+> tested (including a real-data validation run against the real embedded
+> RKPR corpus and the real OpenAI API — 2 structural bugs found and fixed
+> this way), and what remains deferred.
 
-- Prompt builder
-- Context assembly
-- Tool routing
-- Model fallback
-- Response validation
-- Confidence scoring
+Built
+
+- Intent classification + entity extraction (deterministic-first, LLM-assisted)
+- Validated conversation flow-state machine (`flow_state`, within the
+  canonical 11 `DIALOGUE_STATES`)
+- Token-budgeted, source-attributed context assembly
+- Modular, injection-resistant prompt architecture
+- OpenAI-primary/Groq-fallback LLM provider abstraction with a circuit breaker
+- Typed, permission-controlled tool registry (backend validates every
+  proposed tool call; no tool ever claims a completed booking/payment/refund)
+- Deterministic human-handoff policy engine
+- Pre-send response-validation guardrail pipeline
+- The top-level channel-neutral `orchestrate()` pipeline
+- A controlled Customer 360 memory layer (rules.md §6: verified facts vs.
+  AI inferences kept structurally separate)
+- 8 authenticated API endpoints (`/api/v1/orchestration/*`)
+- Dashboard conversation list/detail views with the AI's live decision
+  trace and staff handoff/release controls (also closes a pre-existing
+  gap — Phase 2 never built a conversations/inbox dashboard UI at all)
+
+Known tech debt (tracked, not silent) — see
+`PHASE_4_COMPLETION_REPORT.md` §7 for full detail: `/preview` and
+`/retry` API endpoints deferred; a centralized model-import registry
+would prevent a recurring "missing model import" bug class; database
+backup/PITR still not configured; Groq fallback/real Tesseract/real
+ClamAV/a real Redis consumer remain unexercised against real
+infrastructure.
 
 Deliverable:
-Central AI brain for every interaction.
+Central AI brain for every interaction. ✅ Delivered.
 
 ---
 

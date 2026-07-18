@@ -48,8 +48,28 @@ class Settings(BaseSettings):
     auth_login_rate_limit_per_minute: int = 10
     session_cookie_secure: bool = True
 
-    # Redis (optional until Phase 3)
+    # Redis (optional — used by the Phase 3 ingestion queue when set,
+    # falls back to an in-request InlineIngestionQueue otherwise)
     redis_url: str | None = None
+
+    # Phase 3: Knowledge Intelligence Engine
+    openai_api_key: str | None = None
+    openai_embedding_model: str = "text-embedding-3-large"
+    knowledge_storage_bucket: str = "knowledge-documents"
+    clamav_host: str = "localhost"
+    clamav_port: int = 3310
+    clamav_required_in_production: bool = True
+    tesseract_cmd: str | None = None  # override PATH lookup if needed
+
+    # Phase 4: AI Orchestration — OpenAI primary, Groq fallback per
+    # architecture.md §4.4 ("Call OpenAI as the primary provider. Use Groq
+    # according to explicit fallback policy.")
+    openai_model: str = "gpt-4o-mini"
+    groq_api_key: str | None = None
+    groq_model: str = "llama-3.3-70b-versatile"
+    orchestration_max_context_tokens: int = 4000
+    orchestration_provider_failure_threshold: int = 3
+    orchestration_provider_cooldown_seconds: int = 60
 
     # Monitoring (optional)
     sentry_dsn: str | None = None
@@ -75,6 +95,10 @@ class Settings(BaseSettings):
     @property
     def supabase_gotrue_url(self) -> str:
         return f"{self.supabase_url.rstrip('/')}/auth/v1"
+
+    @property
+    def supabase_storage_url(self) -> str:
+        return f"{self.supabase_url.rstrip('/')}/storage/v1"
 
 
 @lru_cache

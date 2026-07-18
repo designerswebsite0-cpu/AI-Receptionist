@@ -40,3 +40,6 @@ Thumbs.db
 coverage/
 htmlcov/
 .coverage
+
+# Raw knowledge corpus (large source docs, already ingested into DB)
+RKPR_RAG_FINAL_DOCS/

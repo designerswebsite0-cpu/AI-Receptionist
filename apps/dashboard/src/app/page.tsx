@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { DashboardNav } from "@/components/dashboard-nav";
 import { HealthBadge } from "@/components/health-badge";
 import { LogoutButton } from "@/components/logout-button";
 import { ResortSetupForm } from "@/components/resort-setup-form";
@@ -39,6 +40,8 @@ export default async function DashboardHomePage() {
           <LogoutButton />
         </div>
       </header>
+
+      {resort && <DashboardNav />}
 
       {!resort ? (
         <ResortSetupForm />

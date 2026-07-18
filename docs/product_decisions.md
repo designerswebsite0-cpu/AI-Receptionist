@@ -5,6 +5,158 @@
 
 ---
 
+## 2026-07-18 — Phase 4: AI Orchestration — key decisions and a real incident
+
+**Database-destruction incident and the permanent fix.** Mid-phase, a test
+fixture's `Base.metadata.create_all`/`drop_all` ran directly against the
+live Supabase project's `public` schema (the same database real
+development data lives in — there was no separate test project), combined
+with an orphaned background test process that went undetected due to a
+PID-translation mismatch between Git Bash's `ps` output and Windows
+`taskkill`. Result: every application table was dropped, with no backup to
+recover from. Full incident record, forensics, and recovery proof in
+`docs/incidents/`. **Permanent fix**: `tests/conftest.py`'s `db_engine`
+fixture now runs every test inside a dedicated, randomly-named schema
+(`test_<uuid4>`, regenerated fresh per pytest invocation) via SQLAlchemy's
+`schema_translate_map` — structurally incapable of reaching `public`
+regardless of what else is running concurrently against the same
+database. Proven, not just asserted: `tests/test_database_safety.py`
+empirically writes a row through the sandbox and independently confirms
+(via a second, untranslated connection) that it never lands in `public`.
+This is the single most important lesson from this session: **destructive
+DDL from any test/dev tooling must be structurally incapable of reaching
+shared/production data**, not just "be careful" — the incident happened
+despite considerable existing care, because the isolation boundary itself
+didn't exist yet.
+
+**Customer 360 memory: a namespaced sub-key, not a new table.** rules.md
+§6 requires verified facts, AI inferences, and AI summaries to be stored
+and read back separately, with an AI inference never overwriting verified
+data. Rather than a new table, AI-inferred guest preferences are written
+into `customers.resort_preferences["ai_inferred"]` — a namespaced sub-key
+kept structurally apart from anything a staff member enters directly (that
+stays in the top-level `resort_preferences` keys, `customer.full_name`,
+`preferred_language`, and `CustomerNote` rows, none of which
+`app.orchestration.memory.record_inferences` ever touches). Only a fixed,
+curated vocabulary of durable, transferable-across-conversations
+preferences is ever written this way (dietary restrictions, allergies,
+view preference, room category, accessibility needs, meal plan, language,
+guest name) — deliberately **not** the full `ENTITY_FIELDS` vocabulary,
+since stay-specific transactional details (check-in dates, num_nights,
+booking references) would be actively wrong if "remembered" into some
+future, unrelated stay.
+
+**The OpenAI tool-calling round-trip needs the real `tool_calls`/
+`tool_call_id` correlation — mocks don't enforce this.** `LLMMessage` and
+`LLMToolCall` originally only carried `role`/`content` and
+`tool_name`/`arguments`. Every mock-based test passed, because
+`MockLLMProvider` doesn't validate OpenAI's actual message-format
+contract. Against the real API, replaying an assistant's tool proposal
+back as a plain-text message (instead of its real `tool_calls[]`
+structure) and following it with a `role: "tool"` message with no
+`tool_call_id` is rejected outright: "messages with role 'tool' must be a
+response to a preceeding message with 'tool_calls'." This broke 3 of the
+first 13 messages in the real-data validation checklist run (room
+comparison, cancellation policy, a hallucination probe) — all silently
+falling back to a generic "I ran into an issue" response instead of
+answering. Fixed by adding `call_id` to `LLMToolCall` and
+`tool_calls`/`tool_call_id` to `LLMMessage`, threading the real id through
+both providers via a shared `to_openai_wire_format()` helper. **Lesson**:
+a mock that doesn't enforce a real API's actual protocol constraints can
+hide structural bugs indefinitely — the real-data validation checklist
+(run against real embeddings + a real LLM, at a small, explicitly-approved
+cost) is what caught this, not any amount of additional mock-based test
+writing would have.
+
+---
+
+## 2026-07-18 — Phase 3: Knowledge Intelligence Engine — key decisions and real bugs found
+
+**Embedding dimensions: 3072 → 1536.** `text-embedding-3-large`'s native
+output is 3072 dimensions, but pgvector's HNSW index has a hard 2000-
+dimension cap regardless of pgvector version — discovered when migration
+`0013` failed against the live, connected Supabase project ("column
+cannot have more than 2000 dimensions for hnsw index"), not from reading
+pgvector's docs in advance. Fixed by using OpenAI's `dimensions` parameter
+to truncate via Matryoshka representation learning to 1536 — the same
+technique `text-embedding-3-small` uses natively, keeping most of
+`-3-large`'s quality edge while fitting the index. Every embedding call
+passes `dimensions=1536` explicitly (`app/knowledge/embeddings.py`), not
+just the column width.
+
+**Governance importer: the ingestion manifest, not the register, is the
+primary driver.** Initial design assumed `Knowledge_Source_Register.xlsx`
+would drive what gets ingested, with the manifest as secondary
+confirmation. Inspecting both files directly showed the manifest
+(`00_CONTROL/PHASE3_INGESTION_MANIFEST.csv`) has an explicit,
+unambiguous `ingest_status`/`target_index` for every one of the 90 files
+in the package — including ~66 files the register never mentions at all
+(media images, control docs, templates) — while the register only
+describes 24 rows and 3 of those don't correspond to any single ingestible
+file (an aggregate photo-library entry, an archived scanned card, a
+tracking-only row). Flipped the design: manifest classifies every file
+first; the register enriches a manifest row when a match is found (by
+normalized basename, since register paths use the pre-reorganization
+folder layout), but a manifest row with no register match still gets a
+safe, correct classification on its own.
+
+**Governance vocabulary doesn't match its own documented vocabulary.**
+The register's "Lists" tab defines Source Priority as
+{Critical, High, Normal, Low}, but real rows (SRC-018/019/020) use
+"Supplementary", which isn't in that list at all. Similarly Processing
+Status real values include "N/A" and "Archived - Historical Reference
+Only", neither in the Lists tab's own vocabulary. `app/knowledge/
+governance/mapping.py` maps every value actually observed in the live
+file (not just what the vocabulary tab claims exists) and flags anything
+genuinely new in the reconciliation report rather than guessing.
+
+**Website crawler: two confirmed live bugs on the resort's own site.**
+Curl'd the real site before writing any crawler code:
+`robots.txt`'s `Sitemap:` line and every `<loc>` in `sitemap.xml` both
+point at `http://localhost:3000` instead of the real Vercel domain — a
+deployment misconfiguration on the resort's side, not a hypothetical.
+The crawler (`app/knowledge/website/crawler.py`) treats the seed config's
+`base_url` as ground truth and rebases every discovered URL onto it,
+using only the path/query from the sitemap's `<loc>`. Verified against
+the real live site: 49 URLs discovered, 40 fetched successfully, 9
+genuine 404s (sitemap entries pointing at pages that don't exist on the
+live deployment — also a real bug on their side, not the crawler's).
+
+**Chunking bug found and fixed: mixed-content documents.** The FAQ
+chunker's initial design classified a whole document as "FAQ" or "not
+FAQ" based on whether it contained 3+ `Q:` lines anywhere. Tested against
+the real `RKPR_Resort_Restaurant_Menu_Full_2026.pdf`, which has a 5-
+question FAQ appendix after 7 pages of actual menu/pricing content — the
+whole document collapsed into 5 FAQ-only chunks, silently discarding all
+the menu content. Fixed by extracting FAQ pairs from wherever they occur
+and chunking the remaining non-FAQ text separately (`app/knowledge/
+chunking/strategies.py::chunk_source`), with a regression test pinned to
+this exact scenario.
+
+**Malware/OCR: fail-closed and fail-honest, not silently permissive.**
+Neither ClamAV nor Tesseract is installed on this dev machine (confirmed
+via direct checks, not assumed). Both providers report a real
+`unavailable` state rather than pretending success:
+`malware_scan_status` is stamped `unscanned_dev_only` in development
+(never `clean`) and blocks activation outright in production unless
+explicitly overridden; OCR failure sets `processing_status=failed` with a
+real error message. Verified both behaviors by actually running them
+against real files in this environment, not just reading the code.
+
+**RKPR import blocked on user-supplied `OPENAI_API_KEY`, by design.**
+The CLI script (`app.scripts.import_rkpr_knowledge`) is built and
+`--dry-run` verified against the real corpus (19 sources, 50 media, 21
+skipped, matching the manual audit exactly). `--execute` was not run
+autonomously: it calls the real OpenAI embeddings API (real, if small,
+cost — estimated well under $0.10 for this corpus) and writes to the
+live, connected Supabase project. Per this project's safety rules around
+spending real money and touching shared/production infrastructure, this
+required an explicit user go-ahead — asked before proceeding; `.env` has
+no `OPENAI_API_KEY` configured yet, so the real import and benchmark run
+are pending that.
+
+---
+
 ## 2026-07-16 — Phase 2.5: single-resort architecture refactor (removed multi-tenancy)
 
 **Context:** The business model changed — instead of one shared application
