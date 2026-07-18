@@ -5,18 +5,25 @@ from typing import Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# One .env at the repo root serves every app (requirements.md §13). Resolved
-# from this file's own location rather than the process CWD, since uvicorn
-# is typically launched from apps/api/ — a CWD-relative "./.env" would
-# silently miss the real file and fall back to defaults/errors instead.
-_REPO_ROOT_ENV = Path(__file__).resolve().parents[3] / ".env"
+# One .env at the repo root serves every app (requirements.md §13) in local
+# dev, resolved from this file's own location rather than the process CWD,
+# since uvicorn is typically launched from apps/api/ — a CWD-relative
+# "./.env" would silently miss the real file and fall back to defaults/
+# errors instead. The Docker image (Dockerfile: COPY app ./app) flattens
+# this to /app/app/config.py, one directory shallower than the monorepo
+# checkout's apps/api/app/config.py — parents[3] doesn't exist there, and
+# indexing it unconditionally crashed the container before Settings could
+# even load (real environment variables, e.g. Railway's, still work fine
+# without a file — this lookup is a local-dev convenience, not a
+# requirement). Falls back to None (no env file) when running that shallow.
+_REPO_ROOT_ENV = Path(__file__).resolve().parents[3] / ".env" if len(Path(__file__).resolve().parents) > 3 else None
 
 
 class Settings(BaseSettings):
     """Central environment configuration. Fails fast on missing required values."""
 
     model_config = SettingsConfigDict(
-        env_file=str(_REPO_ROOT_ENV),
+        env_file=str(_REPO_ROOT_ENV) if _REPO_ROOT_ENV else None,
         env_file_encoding="utf-8",
         extra="ignore",
     )
