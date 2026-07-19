@@ -20,6 +20,7 @@ def build_system_prompt(
     blocks = [
         templates.identity_block(),
         templates.grounding_rules_block(),
+        templates.off_topic_rules_block(),
         templates.citation_rules_block(),
         templates.safety_rules_block(),
         templates.privacy_rules_block(),

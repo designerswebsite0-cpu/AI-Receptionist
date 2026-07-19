@@ -20,6 +20,7 @@ from app.knowledge.chunking.strategies import count_tokens
 from app.knowledge.embeddings import EmbeddingProvider
 from app.knowledge.retrieval import service as retrieval_service
 from app.knowledge.retrieval.reranker import Reranker
+from app.knowledge.schemas import SearchResponse
 from app.messages import repository as messages_repository
 from app.orchestration.domain import RetrievedCitation, RetrievedContext
 
@@ -137,6 +138,7 @@ async def assemble_context(
     reranker: Reranker,
     guest_only: bool = True,
     max_tokens: int | None = None,
+    search_response: SearchResponse | None = None,
 ) -> AssembledContext:
     settings = get_settings()
     budget = max_tokens or settings.orchestration_max_context_tokens
@@ -144,16 +146,23 @@ async def assemble_context(
     guest_profile = _sanitize_guest_profile(customer)
     remaining_budget = budget - _GUEST_PROFILE_TOKEN_RESERVE
 
-    search_response = await retrieval_service.search(
-        db,
-        query_text=guest_message,
-        embedding_provider=embedding_provider,
-        reranker=reranker,
-        guest_only=guest_only,
-        limit=_RETRIEVAL_LIMIT,
-        conversation_id=conversation_id,
-        requested_channel="orchestration",
-    )
+    # The retrieval query only ever depends on guest_message (never on
+    # dialogue_state/flow_state, which just get stored on the returned
+    # AssembledContext) — callers on the hot path (app.orchestration.
+    # pipeline) fetch this concurrently with intent/entity classification
+    # and pass it in, rather than paying for it here, serialized after
+    # those calls already completed.
+    if search_response is None:
+        search_response = await retrieval_service.search(
+            db,
+            query_text=guest_message,
+            embedding_provider=embedding_provider,
+            reranker=reranker,
+            guest_only=guest_only,
+            limit=_RETRIEVAL_LIMIT,
+            conversation_id=conversation_id,
+            requested_channel="orchestration",
+        )
     citations = [
         RetrievedCitation(
             chunk_id=c.chunk_id,

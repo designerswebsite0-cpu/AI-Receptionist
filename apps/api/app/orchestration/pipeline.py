@@ -222,13 +222,26 @@ async def orchestrate(
     consecutive_low_confidence = _count_consecutive(recent_turns, _is_low_confidence)
     consecutive_tool_failures = _count_consecutive(recent_turns, _is_tool_failure)
 
-    # Independent of each other (neither needs the other's result) — run
-    # concurrently rather than back-to-back, since each is its own network
-    # round trip and this is the single biggest fixed latency cost in the
-    # whole turn.
-    intent, entities = await asyncio.gather(
+    # All three of these depend only on guest_message (never on each
+    # other's result — retrieval in particular only needs dialogue_state/
+    # flow_state to be *stored* on the eventual AssembledContext, not to
+    # run the search itself) — run concurrently rather than back-to-back.
+    # This is the single biggest fixed latency cost in the whole turn: two
+    # LLM round trips and one embedding+DB round trip, previously fully
+    # serialized.
+    intent, entities, search_response = await asyncio.gather(
         classify_intent(guest_message, llm_provider=llm_provider),
         extract_entities(guest_message, llm_provider=llm_provider),
+        retrieval_service.search(
+            db,
+            query_text=guest_message,
+            embedding_provider=embedding_provider,
+            reranker=reranker,
+            guest_only=True,
+            limit=8,  # matches app.orchestration.context.assembler._RETRIEVAL_LIMIT
+            conversation_id=conversation_id,
+            requested_channel="orchestration",
+        ),
     )
 
     if customer is not None:
@@ -258,6 +271,7 @@ async def orchestrate(
         flow_state=flow_state,
         embedding_provider=embedding_provider,
         reranker=reranker,
+        search_response=search_response,
     )
 
     tool_decision = ToolDecision(tool_name=None)
