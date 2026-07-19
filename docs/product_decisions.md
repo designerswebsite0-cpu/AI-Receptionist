@@ -5,6 +5,57 @@
 
 ---
 
+## 2026-07-19 — Deterministic date validation, reactive ack timing, single flat rates, markdown rendering
+
+Four more reports after the previous round shipped:
+
+**The prompt-only date-validity guidance wasn't enough — invalid stay dates (check-out before
+check-in, 2027 bookings) were still getting accepted.** Added real, deterministic checking:
+`app.orchestration.intent.entities.validate_stay_dates()` parses whatever `check_in_date`/
+`check_out_date` currently look like (this turn's extraction merged with recent history) into
+actual `date` objects and flags (1) a check-out on or before check-in, (2) a check-in already in
+the past, and (3) a date beyond `_KNOWN_RATE_CARD_VALID_THROUGH` (currently 2026-12-31, hardcoded
+to the Official Rate Card's own stated validity window rather than a rolling day-count — a rolling
+window either flagged legitimate late-2026 bookings or missed 2027 ones, since both are a similar
+number of days out from any "today" in mid-2026; this constant needs a manual bump whenever the
+resort issues a new rate card, a known limitation until the RAG content-update tooling mentioned
+below exists). Issues surface to the model via a new `DATE VALIDATION ISSUE` prompt block
+(`prompts/builder.build_date_validation_block`) instructing it not to quote a rate or treat the
+dates as settled until resolved with the guest. Unit-tested directly (7 new cases: normal stay,
+checkout-before-checkin, checkout-equals-checkin, past check-in, beyond-validity, missing-year
+resolution, numeric date format).
+
+**Consolidated the "Official Rate Card 2026" source to one rate per room, removing Low/High Season
+entirely** — the user's call: which specific season didn't matter, just that there be exactly one
+number. Directly edited the two live `knowledge_chunks` rows (source `e0ddebc1-...`) via a one-off
+script: dropped the second (High Season) column for every room category, reworded both "over the
+High Season rate" references to "over the standard nightly rate" / "peak-season supplement noted
+in Section 1", and recomputed `content_hash`, `token_count`, and the embedding vector (via the same
+`OpenAIEmbeddingProvider` real ingestion uses) so retrieval stays consistent with the new text —
+a raw content edit without re-embedding would have left the vector search index stale. Left the
+staff-only "Pending Pricing Sign-Off Tracker" source untouched (visibility=`staff`, never reaches
+guests, and is an active human revenue-management draft, not something to silently overwrite). A
+proper content-update/re-ingestion tool is intentionally deferred — this was a direct, one-time fix.
+
+**Heavy-task acknowledgment ("just a sec") was keyword-triggered and fired for nearly every
+booking/cancel/refund-shaped message** — felt repetitive and unearned once most replies were
+already fast from the earlier latency work. Replaced the keyword heuristic entirely with a
+reactive timer: `ChatWidget.tsx`'s `SLOW_REPLY_ACK_THRESHOLD_MS` (15000) only shows the ack bubble
+if the real reply hasn't arrived by then, cleared immediately if/when it does — so it now appears
+rarely, and only for turns that are actually slow, rather than being predicted from the message's
+wording.
+
+**Chat replies rendered literal `**`/`###` markdown syntax instead of actual bold/headers/lists.**
+Added `react-markdown` (new dependency; renders to real React elements, not `dangerouslySetInnerHTML`,
+so no raw-HTML injection risk) and a new `MarkdownText` component with compact chat-bubble-scaled
+overrides (headings collapse to bold inline text rather than browser-default heading sizes, tight
+list/paragraph spacing, links restricted to http(s) and opened in a new tab). Applied to `ai`/`human`
+message roles only — guest's own typed text and system messages stay plain, since markdown syntax
+in a guest's own message is far more likely to be literal (e.g. `2*3` or a stray `*`) than intentional
+formatting.
+
+---
+
 ## 2026-07-19 — Composer UX fixes, conversation-memory bug, pricing ambiguity, small-talk regression
 
 Six more reports after live guest testing of the widget, each traced to a specific root cause

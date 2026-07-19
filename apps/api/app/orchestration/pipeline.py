@@ -45,7 +45,7 @@ from app.orchestration.flow import engine as flow_engine
 from app.orchestration.guardrails.validator import safe_fallback_response, validate_response
 from app.orchestration.handoff.engine import evaluate_handoff_requirement
 from app.orchestration.intent.classifier import classify_intent
-from app.orchestration.intent.entities import extract_entities
+from app.orchestration.intent.entities import extract_entities, validate_stay_dates
 from app.orchestration.llm.base import LLMMessage, LLMProvider
 from app.orchestration.llm.fallback import AllProvidersFailedError
 from app.orchestration.models import OrchestrationTurn
@@ -328,6 +328,7 @@ async def orchestrate(
     # entity extraction on its own only ever sees the current message.
     accumulated_entities = _merge_with_recent_entities(entities, recent_turns)
     missing_information = flow_engine.determine_missing_information(flow_state, accumulated_entities)
+    date_validation_issues = validate_stay_dates(accumulated_entities.values)
 
     assembled = await assemble_context(
         db,
@@ -340,6 +341,7 @@ async def orchestrate(
         reranker=reranker,
         search_response=search_response,
         stated_entities=accumulated_entities.values,
+        date_validation_issues=date_validation_issues,
     )
 
     tool_decision = ToolDecision(tool_name=None)

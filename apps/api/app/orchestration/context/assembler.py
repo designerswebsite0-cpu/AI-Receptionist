@@ -49,6 +49,7 @@ class AssembledContext:
     flow_state: str | None = None
     guest_profile: dict = field(default_factory=dict)
     stated_entities: dict = field(default_factory=dict)
+    date_validation_issues: list[str] = field(default_factory=list)
     retrieved_context: RetrievedContext = field(default_factory=lambda: RetrievedContext(query=""))
     truncated: bool = False
     total_tokens_estimate: int = 0
@@ -141,6 +142,7 @@ async def assemble_context(
     max_tokens: int | None = None,
     search_response: SearchResponse | None = None,
     stated_entities: dict | None = None,
+    date_validation_issues: list[str] | None = None,
 ) -> AssembledContext:
     settings = get_settings()
     budget = max_tokens or settings.orchestration_max_context_tokens
@@ -215,6 +217,7 @@ async def assemble_context(
         flow_state=flow_state,
         guest_profile=guest_profile,
         stated_entities=stated_entities or {},
+        date_validation_issues=date_validation_issues or [],
         retrieved_context=retrieved_context,
         truncated=citations_truncated or turns_truncated,
         total_tokens_estimate=total_tokens,

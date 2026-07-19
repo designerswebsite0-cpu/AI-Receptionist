@@ -3,11 +3,13 @@ network access, no database. LLM-assisted paths are tested separately
 with MockLLMProvider (also no network call).
 """
 
+from datetime import date
+
 import pytest
 
 from app.orchestration.constants import ALL_INTENTS
 from app.orchestration.intent.classifier import classify_intent, classify_intent_deterministic, is_small_talk
-from app.orchestration.intent.entities import extract_entities, extract_entities_deterministic
+from app.orchestration.intent.entities import extract_entities, extract_entities_deterministic, validate_stay_dates
 from app.orchestration.llm.base import LLMProviderError, LLMResult
 from app.orchestration.llm.mock_provider import MockLLMProvider
 
@@ -151,3 +153,54 @@ async def test_extract_entities_without_provider_only_returns_deterministic():
     entities = await extract_entities("My email is guest@example.com", llm_provider=None)
     assert entities.get("email") == "guest@example.com"
     assert "occasion" not in entities.values
+
+
+# --- stay date validation -------------------------------------------------------
+
+
+_TODAY = date(2026, 7, 19)
+
+
+def test_validate_stay_dates_accepts_a_normal_future_stay():
+    issues = validate_stay_dates(
+        {"check_in_date": "15 August 2026", "check_out_date": "20 August 2026"}, today=_TODAY
+    )
+    assert issues == []
+
+
+def test_validate_stay_dates_flags_checkout_before_checkin():
+    issues = validate_stay_dates(
+        {"check_in_date": "21 August 2026", "check_out_date": "20 August 2026"}, today=_TODAY
+    )
+    assert any("not after the check-in date" in issue for issue in issues)
+
+
+def test_validate_stay_dates_flags_checkout_equal_to_checkin():
+    issues = validate_stay_dates(
+        {"check_in_date": "20 August 2026", "check_out_date": "20 August 2026"}, today=_TODAY
+    )
+    assert any("not after the check-in date" in issue for issue in issues)
+
+
+def test_validate_stay_dates_flags_a_check_in_already_in_the_past():
+    issues = validate_stay_dates({"check_in_date": "1 January 2026"}, today=_TODAY)
+    assert any("already passed" in issue for issue in issues)
+
+
+def test_validate_stay_dates_flags_a_date_beyond_the_rate_card_validity_window():
+    issues = validate_stay_dates({"check_in_date": "15 August 2027"}, today=_TODAY)
+    assert any("validity window" in issue for issue in issues)
+
+
+def test_validate_stay_dates_resolves_a_missing_year_to_the_next_upcoming_occurrence():
+    # "1 October" with no year, asked on 19 July 2026, means this coming October — still
+    # this year and well within the rate card's validity window, so no issues.
+    issues = validate_stay_dates({"check_in_date": "1 October"}, today=_TODAY)
+    assert issues == []
+
+
+def test_validate_stay_dates_handles_numeric_format():
+    issues = validate_stay_dates(
+        {"check_in_date": "21/08/2026", "check_out_date": "20/08/2026"}, today=_TODAY
+    )
+    assert any("not after the check-in date" in issue for issue in issues)

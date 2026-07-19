@@ -7,6 +7,7 @@ occasion, urgency, etc.) when a provider is supplied.
 
 import json
 import re
+from datetime import date
 
 from app.orchestration.domain import ExtractedEntities
 from app.orchestration.intent.classifier import is_small_talk
@@ -47,6 +48,98 @@ def _extract_dates(text: str) -> list[str]:
     for match in _DATE_NUMERIC_PATTERN.finditer(text):
         dates.append(match.group(0))
     return dates
+
+
+_MONTH_NUMBER = {name: index + 1 for index, name in enumerate(_MONTH_NAMES)}
+
+# Tied to the actual "Official Rate Card 2026" source's own stated validity
+# window ("1 January 2026 - 31 December 2026") rather than a generic rolling
+# window — a rolling day-count either flags legitimate late-2026 bookings
+# (still within the current rate card) or misses 2027 ones (the real bug
+# reported), since both are a similar number of days out from any "today"
+# in mid-2026. Bump this the day the resort issues a new rate card with a
+# new validity period — a known, documented limitation until the RAG
+# content-update tooling mentioned in product_decisions.md exists.
+_KNOWN_RATE_CARD_VALID_THROUGH = date(2026, 12, 31)
+
+
+def _parse_stated_date(raw: str, *, today: date) -> date | None:
+    """Best-effort parse of exactly the two formats _extract_dates produces
+    ("15 August 2026" / "15/08/2026"). A missing year is resolved to the
+    next real occurrence of that day/month on or after `today` — a guest
+    saying "15 August" without a year means the upcoming one, never a past
+    one. Returns None (rather than raising) for anything that isn't a real
+    calendar date — deliberately silent, since this is a best-effort
+    plausibility check, not a strict input validator."""
+    text = raw.strip().lower()
+
+    match = re.match(r"^(\d{1,2})\s+([a-z]+)\s*(\d{4})?$", text)
+    if match:
+        day_str, month_name, year_str = match.groups()
+        month = _MONTH_NUMBER.get(month_name)
+        if month is None:
+            return None
+        day = int(day_str)
+        if year_str:
+            try:
+                return date(int(year_str), month, day)
+            except ValueError:
+                return None
+        for candidate_year in (today.year, today.year + 1):
+            try:
+                candidate = date(candidate_year, month, day)
+            except ValueError:
+                continue
+            if candidate >= today:
+                return candidate
+        return None
+
+    match = re.match(r"^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$", text)
+    if match:
+        day_str, month_str, year_str = match.groups()
+        try:
+            return date(int(year_str), int(month_str), int(day_str))
+        except ValueError:
+            return None
+
+    return None
+
+
+def validate_stay_dates(values: dict, *, today: date | None = None) -> list[str]:
+    """Deterministic plausibility check on whatever check_in_date/
+    check_out_date currently look like (this turn's own extraction, merged
+    with recent history — see pipeline._merge_with_recent_entities). Not
+    exhaustive input validation (there's no booking tool yet to actually
+    gate), but a real, structural check the earlier prompt-only version
+    couldn't guarantee: catches a check-out on or before check-in, a
+    check-in already in the past, and dates far enough out that nothing in
+    the knowledge base could actually confirm a rate for them."""
+    today = today or date.today()
+    issues: list[str] = []
+
+    check_in_raw = values.get("check_in_date")
+    check_out_raw = values.get("check_out_date")
+    check_in = _parse_stated_date(check_in_raw, today=today) if check_in_raw else None
+    check_out = _parse_stated_date(check_out_raw, today=today) if check_out_raw else None
+
+    if check_in and check_in < today:
+        issues.append(f"The check-in date given ({check_in_raw}) has already passed.")
+
+    if check_in and check_out and check_out <= check_in:
+        issues.append(
+            f"The check-out date given ({check_out_raw}) is not after the check-in date "
+            f"({check_in_raw}) — check-out must come later than check-in."
+        )
+
+    for label, parsed, raw in (("check-in", check_in, check_in_raw), ("check-out", check_out, check_out_raw)):
+        if parsed and parsed > _KNOWN_RATE_CARD_VALID_THROUGH:
+            issues.append(
+                f"The {label} date given ({raw}) falls after {_KNOWN_RATE_CARD_VALID_THROUGH:%d %B %Y}, "
+                "the current rate card's validity window — rates and availability can't be "
+                "confirmed that far out yet."
+            )
+
+    return issues
 
 
 def extract_entities_deterministic(text: str) -> ExtractedEntities:
