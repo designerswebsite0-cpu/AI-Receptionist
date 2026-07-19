@@ -140,6 +140,60 @@ async def test_small_talk_message_skips_llm_entity_extraction(db_session: AsyncS
 
 
 @pytest.mark.asyncio
+async def test_earlier_stated_entities_are_recalled_on_a_later_turn_without_repeating_them(
+    db_session: AsyncSession,
+):
+    """Regression test for a real reported bug: a guest gives their dates
+    and party size, then a later message ("what's the final price?")
+    doesn't repeat them — the AI must still know them, not ask again.
+    """
+    _, conversation = await _make_conversation(db_session)
+
+    first_message = await _send_guest_message(
+        db_session,
+        conversation.id,
+        "I'd like to book a room, check-in 15 August 2026, check-out 20 August 2026, 2 adults.",
+    )
+    await orchestrate(
+        db_session,
+        conversation_id=conversation.id,
+        message_id=first_message.id,
+        guest_message=first_message.content_text,
+        channel="webchat",
+        llm_provider=MockLLMProvider(
+            responses=[LLMResult(text="Sure, let me pull that up.", provider="mock", model="mock-llm", latency_ms=5)]
+        ),
+        embedding_provider=_EMBEDDING_PROVIDER,
+        reranker=_RERANKER,
+    )
+
+    captured_messages: list[LLMMessage] = []
+
+    def _capture(messages: list[LLMMessage]) -> LLMResult:
+        captured_messages.extend(messages)
+        return LLMResult(text="The rate for that stay is INR 12,500.", provider="mock", model="mock-llm", latency_ms=5)
+
+    second_message = await _send_guest_message(
+        db_session, conversation.id, "What's the final price for the Garden Deluxe Room?"
+    )
+    await orchestrate(
+        db_session,
+        conversation_id=conversation.id,
+        message_id=second_message.id,
+        guest_message=second_message.content_text,
+        channel="webchat",
+        llm_provider=MockLLMProvider(responder=_capture),
+        embedding_provider=_EMBEDDING_PROVIDER,
+        reranker=_RERANKER,
+    )
+
+    final_user_message = captured_messages[-1].content
+    assert "ALREADY STATED THIS CONVERSATION" in final_user_message
+    assert "check_in_date" in final_user_message
+    assert "15 August 2026" in final_user_message
+
+
+@pytest.mark.asyncio
 async def test_mandatory_handoff_intent_skips_generation_and_escalates_the_conversation(db_session: AsyncSession):
     _, conversation = await _make_conversation(db_session)
     guest_message = await _send_guest_message(db_session, conversation.id, "I want a refund for my stay")

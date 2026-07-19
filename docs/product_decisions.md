@@ -5,6 +5,133 @@
 
 ---
 
+## 2026-07-19 — Composer UX fixes, conversation-memory bug, pricing ambiguity, small-talk regression
+
+Six more reports after live guest testing of the widget, each traced to a specific root cause
+rather than patched symptomatically:
+
+**Heavy-task acknowledgment fired instantly.** Felt robotic — a real receptionist takes a beat to
+read the request before saying "let me check." `ChatWidget.tsx`'s ack bubble is now appended via a
+`setTimeout` randomized 1000-2000ms after the guest's message, instead of in the same render as the
+optimistic guest bubble.
+
+**Guests couldn't select or copy message text.** The root cause was `select-none` on the entire
+widget's outer wrapper `<div>` — `user-select` is CSS-inherited, so it silenced selection
+everywhere inside, including message bubbles, not just the floating launcher button it was
+presumably meant for. Removed; verified via computed style (`user-select: auto` on both the
+wrapper and message text) that this was the actual, sole cause.
+
+**Composer was a single-line `<input>`, so Shift+Enter could never insert a newline** — physically
+impossible in that element regardless of any key handler. Replaced with an auto-growing
+`<textarea>` (rows=1, `max-h-32 overflow-y-auto`, height synced to `scrollHeight` on every keystroke
+via a `useEffect`); `onKeyDown` now calls `form.requestSubmit()` on a bare Enter (preventing default)
+and does nothing on Shift+Enter (default not prevented, so the browser's native line-break
+insertion proceeds untouched) — standard chat-app convention. Verified the handler logic directly
+via synthetic `KeyboardEvent`s (`defaultPrevented` false for Shift+Enter, true for plain Enter) since
+this session's browser-automation layer doesn't reliably simulate a trusted Shift+held keypress for
+native newline insertion — a tooling gap, not a code gap; the browser's own default action is what
+inserts the newline for a real user, which no code change here could break.
+
+**Bot-looking avatar swapped for `ConciergeBell` (lucide-react)** in the header, typing indicator,
+and `MessageBubble`, replacing the robotic `Bot` icon — a human-service-associated logo without
+using an actual photo. Also caught and fixed a leftover "AI concierge" wording in the closed
+launcher button's `aria-label` that the earlier persona cleanup (see the entry below) had missed —
+the open panel's label was fixed then, this one wasn't.
+
+**Root-caused "the receptionist forgot my check-in date and asked again."** `extract_entities()`
+only ever looks at the *current* message — a follow-up like "what's the final price?" mentions
+none of the check-in date/guest count/room category given a turn or two earlier, so
+`flow_engine.determine_missing_information()` saw them as still-missing every single turn. Fixed
+with `pipeline._merge_with_recent_entities()`: backfills any field the current message didn't
+mention from the most recent past turn that did (recent turns are already fetched for streak-
+counting, so this costs no extra query), never overwriting what the guest just said. The merged
+result also now reaches the model directly via a new `ALREADY STATED THIS CONVERSATION` block
+(`prompts/builder.build_stated_details_block`, sourced from a new `AssembledContext.stated_entities`
+field) — distinct from `GUEST_PROFILE`, which is the customer's durable cross-visit profile, not
+this enquiry's specifics. Regression-tested end-to-end against a real (sandboxed-schema) database
+turn sequence, asserting the second turn's actual LLM prompt contains the first turn's stated date.
+
+**Root-caused "it quoted two different prices and didn't say which applied."** Queried the live
+knowledge base directly: the "Official Rate Card 2026" source (guest-visible, authoritative) has a
+Low Season / High Season column for every room category — legitimate content — but its own header
+text also states "Room tariffs (Sec. 1)... are DRAFT ESTIMATES pending sign-off," which the model
+wasn't instructed to surface. Separately confirmed the staff-only "Pending Pricing Sign-Off
+Tracker" source (visibility=`staff`) is correctly excluded from guest-facing retrieval by
+`hybrid._apply_guest_safety`'s `visibility == "guest"` filter — not a leak, not the cause. Added
+`templates.pricing_rules_block()`: resolve to the one season-appropriate rate using the guest's
+known dates (or ask for dates first) rather than reciting both; say plainly when a source's own
+text marks its figures as draft/pending; and check a date against any stated validity/effective
+window before treating it as routinely bookable — grounded in the Rate Card's own "Validity: 1
+January 2026 - 31 December 2026" line, which is exactly why a 2027 date should give the model
+pause rather than being silently accepted. (Booking-confirmation-requires-a-tool-result is already
+enforced by `grounding_rules_block()` and `guardrails/validator.py`'s blocking check — reaffirmed
+for when Phase 9's real booking tool exists, no change needed now.)
+
+**Found and fixed a real pre-existing bug while verifying the above.** `_SMALL_TALK_PHRASES` had
+`"hi there"` but not bare `"hi"` — so a plain "Hi" wasn't recognized as small talk at all, causing
+an unnecessary LLM intent-classification escalation *and* skipping entity extraction's small-talk
+shortcut (3 LLM calls instead of 1 for the single most common greeting). Only caught because this
+round of testing was run against a real sandboxed-schema database instead of skipping (no local
+Postgres reachable normally) — a reminder that `test_small_talk_message_skips_llm_entity_extraction`
+and its neighbors had never actually executed end-to-end in this environment before now.
+
+---
+
+## 2026-07-19 — Background deferral, length-proportional pacing, Customer 360 audit
+
+Three further asks after the pacing/persona work below shipped:
+
+**`memory.record_inferences()` moved off the guest's critical path.** It
+was `await`ed inline in `pipeline.py`, blocking the reply on a DB write
+whose only effect is updating `GUEST_PROFILE` for some *future* turn — it
+contributes nothing to the turn already in flight. `orchestrate()` gained
+an optional `background_tasks: BackgroundTasks` parameter; when supplied,
+the write is scheduled via `background_tasks.add_task(...)` instead of
+awaited, and runs after the HTTP response has already been sent. The
+scheduled callable (`_record_inferences_background`) opens its own fresh
+`AsyncSessionLocal()` session rather than reusing the request's — FastAPI's
+dependency exit stack has already closed that session by the time a
+background task executes, so reusing it would fail. `background_tasks`
+defaults to `None` (falls back to the old inline `await`), so tests and any
+future caller that hasn't wired one up keep working unchanged. Threaded
+through both callers of `orchestrate()`: `webchat/router.py` →
+`webchat/service.py.send_message()`, and `orchestration/router.py`'s
+`process_message` (staff/dashboard-triggered turns get the same benefit).
+
+**Reply pacing now scales with reply length instead of a flat floor.**
+`ChatWidget.tsx`'s old `MIN_REPLY_DELAY_MS = 1800` applied the same wait to
+"yes" as to a full room catalogue. Replaced with `computeReplyDelayMs()`:
+`900ms` floor + `14ms`/character, capped at `7000ms` — a one-word reply
+reveals near-instantly, a long itemized answer legitimately takes several
+seconds, matching how a real person's typing time actually varies. The
+pre-typing-indicator pause was also shortened 1200ms → 600ms as part of
+the same latency push.
+
+**Investigated the "12 customer rows for one guest" report — not a code
+bug.** Queried the live `customers` table directly: 12 rows, timestamps
+spread from 2026-07-18 16:11 through 2026-07-19 06:17 (the exact span of
+this project's live deployment-debugging and manual testing), 4 rows with
+zero associated messages (abandoned test sessions), the rest with 1-17
+messages each. This matches repeated testing across separate browser
+sessions/reloads/incognito windows during active debugging, not a
+duplicate-customer-per-message defect — `ChatWidget.tsx` already restores
+an existing session via a first-party, httpOnly cookie before ever calling
+`ensureSession()`, and only mints a new session (hence a new anonymous
+`Customer`) when no valid session cookie exists, which is the intended
+anonymous-guest design (`capture_contact()` already re-points a session to
+an existing verified `Customer` once phone/email is provided, so identity
+resolution on real contact info was already correct). `customer_contacts`
+and `customer_notes` are empty because no test session ever completed the
+contact-capture flow and notes are staff-authored only (dashboard, not the
+AI pipeline) — nothing currently writes them automatically, so there was
+nothing to defer. `customer_tags` is empty for the same reason: tagging is
+a manual, staff-only dashboard action (`app/customers/service.py`) that the
+orchestration pipeline never calls — "writing customer tags" isn't
+something the AI turn does synchronously today, so there is no latency
+cost to move to the background yet.
+
+---
+
 ## 2026-07-19 — Post-launch chat tuning: latency, cost, persona, pacing
 
 Real guest usage after Phase 5 shipped surfaced three practical problems:

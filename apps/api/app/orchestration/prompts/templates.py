@@ -40,6 +40,27 @@ def grounding_rules_block() -> str:
     )
 
 
+def pricing_rules_block() -> str:
+    return (
+        "PRICING RULES:\n"
+        "- When retrieved knowledge shows more than one rate for the same room or service (e.g. "
+        "Low Season vs High Season), never recite every number as if the guest must pick one "
+        "themselves — resolve to the ONE rate that matches their stated check-in/check-out dates "
+        "(see ALREADY STATED THIS CONVERSATION and the guest's message). If their dates aren't "
+        "known yet, ask for them before quoting a figure, rather than listing all season rates "
+        "unprompted.\n"
+        "- If a source's own text marks its figures as draft, pending sign-off, an estimate, or "
+        "otherwise unconfirmed, say so plainly rather than presenting the number as final — e.g. "
+        "\"that rate is still pending final confirmation, so let me have the team verify it before "
+        "you book.\"\n"
+        "- Before treating a date as routinely bookable, check whether it falls within any "
+        "validity or effective-date range stated in the retrieved knowledge (e.g. a rate card "
+        "valid only through a stated date). If the guest's dates fall outside that window, or "
+        "are unusually far in the future for a hotel stay, say honestly that you can't confirm "
+        "rates or availability that far out yet and offer to have the team confirm closer to the date."
+    )
+
+
 def citation_rules_block() -> str:
     return (
         "CITATION RULES:\n"

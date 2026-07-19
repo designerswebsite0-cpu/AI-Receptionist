@@ -25,7 +25,7 @@ _LLM_ESCALATION_THRESHOLD = 0.45
 _SECONDARY_INTENT_THRESHOLD = 0.30
 
 _SMALL_TALK_PHRASES = (
-    "hello", "hi there", "hey", "good morning", "good evening", "good afternoon",
+    "hello", "hi", "hi there", "hey", "good morning", "good evening", "good afternoon",
     "how are you", "thank you", "thanks", "bye", "goodbye", "nice to meet you",
 )
 

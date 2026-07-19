@@ -10,13 +10,16 @@ know about each other directly.
 
 import asyncio
 import json
+import logging
 import uuid
 
+from fastapi import BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.conversations import service as conversations_service
 from app.customers.repository import get_customer
+from app.database import AsyncSessionLocal
 from app.knowledge.embeddings import EmbeddingProvider
 from app.knowledge.retrieval import service as retrieval_service
 from app.knowledge.retrieval.reranker import Reranker
@@ -50,6 +53,8 @@ from app.orchestration.prompts.builder import build_messages
 from app.orchestration.tools import handlers as tool_handlers
 from app.orchestration.tools.registry import to_openai_tools
 from app.orchestration.tools.validation import validate_tool_call
+
+logger = logging.getLogger(__name__)
 
 # How many of the most recent turns to look at when counting a *consecutive*
 # streak of low-confidence classifications or tool failures — matches
@@ -89,6 +94,32 @@ def _is_low_confidence(turn: OrchestrationTurn) -> bool:
 
 def _is_tool_failure(turn: OrchestrationTurn) -> bool:
     return turn.tool_status == "failed"
+
+
+def _merge_with_recent_entities(
+    entities: ExtractedEntities, recent_turns: list[OrchestrationTurn]
+) -> ExtractedEntities:
+    """A follow-up like "what's the final price?" rarely repeats the
+    check-in date, guest count, or room category given a turn or two
+    earlier — entity extraction only ever looks at the *current* message,
+    so on its own it has no way to know those are still true. This
+    backfills any field the current message didn't mention from the most
+    recent past turn that did (recent_turns is most-recent-first, so the
+    first match wins), which is what lets flow_engine's missing-info check
+    and the prompt's stated-details block correctly remember earlier
+    answers instead of asking the guest to repeat themselves. Never
+    overwrites a field the guest just gave in this message — recency
+    always favors what they're saying *right now*."""
+    values = dict(entities.values)
+    confidence = dict(entities.confidence)
+    source = dict(entities.source)
+    for turn in recent_turns:
+        for field_name, value in (turn.extracted_entities or {}).items():
+            if field_name not in values and value is not None:
+                values[field_name] = value
+                confidence[field_name] = 0.75
+                source[field_name] = "conversation_history"
+    return ExtractedEntities(values=values, confidence=confidence, source=source)
 
 
 async def _search_resort_knowledge(
@@ -170,6 +201,23 @@ async def _result_from_existing_turn(db: AsyncSession, turn: OrchestrationTurn) 
     )
 
 
+async def _record_inferences_background(
+    *, customer_id: uuid.UUID, entities: ExtractedEntities, conversation_id: uuid.UUID
+) -> None:
+    """Runs after the guest-facing reply has already been sent (scheduled
+    via FastAPI's BackgroundTasks). Cannot reuse the request's AsyncSession
+    — FastAPI's dependency exit stack has already closed it by the time a
+    background task runs — so this opens its own short-lived session
+    instead, mirroring app.database.get_db's own pattern."""
+    try:
+        async with AsyncSessionLocal() as db:
+            customer = await get_customer(db, customer_id)
+            if customer is not None:
+                await memory.record_inferences(db, customer=customer, entities=entities, conversation_id=conversation_id)
+    except Exception:  # noqa: BLE001 - background best-effort; must never affect a turn already replied to
+        logger.exception("Background customer-inference write failed for conversation %s", conversation_id)
+
+
 async def orchestrate(
     db: AsyncSession,
     *,
@@ -181,6 +229,7 @@ async def orchestrate(
     embedding_provider: EmbeddingProvider,
     reranker: Reranker,
     actor_user_id: uuid.UUID | None = None,
+    background_tasks: BackgroundTasks | None = None,
 ) -> OrchestrationResult:
     existing_turn = await orch_repository.get_turn_by_message_id(db, message_id)
     if existing_turn is not None:
@@ -245,7 +294,20 @@ async def orchestrate(
     )
 
     if customer is not None:
-        await memory.record_inferences(db, customer=customer, entities=entities, conversation_id=conversation_id)
+        # Not needed to produce this turn's reply — only affects a *future*
+        # turn's GUEST_PROFILE block — so it must never sit on the guest's
+        # critical path. Deferred to run after the response is sent when a
+        # BackgroundTasks is available; falls back to inline (old behavior)
+        # for callers that don't wire one up, e.g. tests.
+        if background_tasks is not None:
+            background_tasks.add_task(
+                _record_inferences_background,
+                customer_id=customer.id,
+                entities=entities,
+                conversation_id=conversation_id,
+            )
+        else:
+            await memory.record_inferences(db, customer=customer, entities=entities, conversation_id=conversation_id)
 
     handoff = evaluate_handoff_requirement(
         intent=intent,
@@ -260,7 +322,12 @@ async def orchestrate(
         mandatory_handoff=handoff.required,
     )
 
-    missing_information = flow_engine.determine_missing_information(flow_state, entities)
+    # Backfilled from recent turns so a follow-up ("what's the final
+    # price?") doesn't look like it's missing the check-in date / guest
+    # count / room category the guest already gave a message or two ago —
+    # entity extraction on its own only ever sees the current message.
+    accumulated_entities = _merge_with_recent_entities(entities, recent_turns)
+    missing_information = flow_engine.determine_missing_information(flow_state, accumulated_entities)
 
     assembled = await assemble_context(
         db,
@@ -272,6 +339,7 @@ async def orchestrate(
         embedding_provider=embedding_provider,
         reranker=reranker,
         search_response=search_response,
+        stated_entities=accumulated_entities.values,
     )
 
     tool_decision = ToolDecision(tool_name=None)

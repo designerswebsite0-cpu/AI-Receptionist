@@ -7,7 +7,7 @@ tested service/pipeline functions; no new business logic lives in this file.
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.pagination import PageParams, build_page_meta
@@ -45,6 +45,7 @@ router = APIRouter(prefix="/api/v1/orchestration", tags=["orchestration"])
 async def process_message(
     conversation_id: uuid.UUID,
     body: ProcessMessageRequest,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     llm_provider: LLMProvider = Depends(get_llm_provider),
@@ -72,6 +73,7 @@ async def process_message(
         embedding_provider=embedding_provider,
         reranker=reranker,
         actor_user_id=user.id,
+        background_tasks=background_tasks,
     )
 
     return success(

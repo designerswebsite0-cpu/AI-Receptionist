@@ -9,6 +9,7 @@ implementation inside the website.").
 import uuid
 from datetime import UTC, datetime, timedelta
 
+from fastapi import BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.service import record_audit_event
@@ -137,6 +138,7 @@ async def send_message(
     llm_provider: LLMProvider,
     embedding_provider: EmbeddingProvider,
     reranker: Reranker,
+    background_tasks: BackgroundTasks | None = None,
 ) -> WebchatMessageOut:
     # Duplicate-submission guard (brief §11/§12: "Prevent duplicate sends
     # from rapid clicks"): reuses the same idempotency primitive Phase 6
@@ -163,6 +165,7 @@ async def send_message(
         embedding_provider=embedding_provider,
         reranker=reranker,
         actor_user_id=None,
+        background_tasks=background_tasks,
     )
 
     conversation = await conversations_service.get_conversation_or_404(db, session.conversation_id)

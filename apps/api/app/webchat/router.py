@@ -8,7 +8,7 @@ app.orchestration.pipeline.orchestrate() the staff dashboard uses.
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.pagination import PageParams, build_page_meta
@@ -114,6 +114,7 @@ async def send_message(
     session_id: uuid.UUID,
     body: WebchatMessageIn,
     request: Request,
+    background_tasks: BackgroundTasks,
     settings: Settings = Depends(_require_enabled),
     session: WebchatSession = Depends(get_webchat_session),
     db: AsyncSession = Depends(get_db),
@@ -147,6 +148,7 @@ async def send_message(
         llm_provider=llm_provider,
         embedding_provider=embedding_provider,
         reranker=reranker,
+        background_tasks=background_tasks,
     )
     return success(result.model_dump(mode="json"))
 
