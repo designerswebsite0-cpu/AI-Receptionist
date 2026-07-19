@@ -8,11 +8,13 @@ message; nothing else wires steps 2-10 together, and none of those modules
 know about each other directly.
 """
 
+import asyncio
 import json
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.conversations import service as conversations_service
 from app.customers.repository import get_customer
 from app.knowledge.embeddings import EmbeddingProvider
@@ -220,8 +222,14 @@ async def orchestrate(
     consecutive_low_confidence = _count_consecutive(recent_turns, _is_low_confidence)
     consecutive_tool_failures = _count_consecutive(recent_turns, _is_tool_failure)
 
-    intent = await classify_intent(guest_message, llm_provider=llm_provider)
-    entities = await extract_entities(guest_message, llm_provider=llm_provider)
+    # Independent of each other (neither needs the other's result) — run
+    # concurrently rather than back-to-back, since each is its own network
+    # round trip and this is the single biggest fixed latency cost in the
+    # whole turn.
+    intent, entities = await asyncio.gather(
+        classify_intent(guest_message, llm_provider=llm_provider),
+        extract_entities(guest_message, llm_provider=llm_provider),
+    )
 
     if customer is not None:
         await memory.record_inferences(db, customer=customer, entities=entities, conversation_id=conversation_id)
@@ -261,9 +269,12 @@ async def orchestrate(
     if handoff.required:
         response_text = _HANDOFF_ACKNOWLEDGMENT
     else:
+        max_response_tokens = get_settings().orchestration_max_response_tokens
         try:
             prompt_messages = build_messages(context=assembled, intent=intent, channel=channel)
-            llm_result = await llm_provider.complete(prompt_messages, tools=to_openai_tools())
+            llm_result = await llm_provider.complete(
+                prompt_messages, tools=to_openai_tools(), max_tokens=max_response_tokens
+            )
             provider_usage = ProviderUsage(
                 provider=llm_result.provider,
                 model=llm_result.model,
@@ -323,7 +334,9 @@ async def orchestrate(
                                 LLMMessage(role="assistant", content=llm_result.text or "", tool_calls=[call]),
                                 LLMMessage(role="tool", content=json.dumps(output), tool_call_id=call.call_id),
                             ]
-                            followup_result = await llm_provider.complete(followup_messages)
+                            followup_result = await llm_provider.complete(
+                                followup_messages, max_tokens=max_response_tokens
+                            )
                             response_text = followup_result.text
                             provider_usage = ProviderUsage(
                                 provider=followup_result.provider,

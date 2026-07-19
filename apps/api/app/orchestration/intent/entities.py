@@ -9,6 +9,7 @@ import json
 import re
 
 from app.orchestration.domain import ExtractedEntities
+from app.orchestration.intent.classifier import is_small_talk
 from app.orchestration.llm.base import LLMMessage, LLMProvider, LLMProviderError
 
 _EMAIL_PATTERN = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
@@ -116,7 +117,12 @@ async def extract_entities(text: str, *, llm_provider: LLMProvider | None = None
     match."""
     result = extract_entities_deterministic(text)
 
-    if llm_provider is None:
+    # A greeting/thanks/goodbye never carries a room category, dietary
+    # restriction, or any other semantic field — skipping the LLM call
+    # entirely for these is a real, safe cost/latency reduction, not just
+    # an optimization in theory (this is a large fraction of turns in
+    # practice: "Hi", "thanks!", "bye" all short-circuit here).
+    if llm_provider is None or is_small_talk(text):
         return result
 
     try:
@@ -145,6 +151,7 @@ async def _extract_semantic_entities(text: str, llm_provider: LLMProvider) -> di
             LLMMessage(role="user", content=prompt),
         ],
         response_format={"type": "json_object"},
+        max_tokens=200,  # a flat JSON object of ~14 short fields never needs more than this
     )
     try:
         parsed = json.loads(result.text)

@@ -19,7 +19,7 @@
     {
       "name": "website",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "-w", "apps/website", "--", "-p", "3100"],
+      "runtimeArgs": ["--prefix", "apps/website", "run", "dev", "--", "-p", "3100"],
       "port": 3100
     }
   ]

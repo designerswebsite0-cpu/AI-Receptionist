@@ -34,6 +34,7 @@ class MockLLMProvider(LLMProvider):
         tools: list[dict] | None = None,
         response_format: dict | None = None,
         timeout: float = 20.0,
+        max_tokens: int | None = None,
     ) -> LLMResult:
         self._call_count += 1
 

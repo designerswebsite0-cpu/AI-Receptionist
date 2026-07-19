@@ -5,6 +5,79 @@
 
 ---
 
+## 2026-07-19 — Post-launch chat tuning: latency, cost, persona, pacing
+
+Real guest usage after Phase 5 shipped surfaced three practical problems:
+30-45s reply latency, ~$0.05-0.06 per message (4-5 messages costing
+$0.20-0.30), and a chat experience that read as an obvious, verbose bot
+rather than a resort receptionist. Fixes, in order of impact:
+
+**Model choice is an operator setting, not a code fix.** The deployment's
+`OPENAI_MODEL` was set to `gpt-5` — a reasoning-tier model, both slower
+and far more expensive per token than needed for grounded FAQ-style
+answers. `Settings.openai_model`'s own Python default was already
+`gpt-4o-mini`; `.env.example` had drifted to suggest `gpt-5` and was
+corrected back. This is the single biggest lever for both latency and
+cost, and it lives in Railway's environment variables, not in this
+repository — flagged clearly to the user rather than something a code
+change alone could fix.
+
+**Response length was uncapped.** No `max_tokens`/`max_completion_tokens`
+was ever passed to any LLM call — nothing stopped a verbose model from
+generating an arbitrarily long reply, which costs more (completion
+tokens, not input tokens, dominate spend) and takes longer to generate.
+Added `orchestration_max_response_tokens` (default 220) to `Settings`,
+threaded through `LLMProvider.complete()`'s signature (`base.py`,
+`openai_provider.py` — as `max_completion_tokens`, the parameter
+reasoning-tier models require and non-reasoning models also accept —
+`groq_provider.py`, `fallback.py`, `mock_provider.py`), applied to the
+main generation and its tool-result follow-up call in `pipeline.py`. Also
+capped intent classification (100) and entity extraction (200) — already
+short JSON, but worth bounding as well.
+
+**Intent classification and entity extraction ran sequentially despite
+being fully independent** (`pipeline.py` called `classify_intent()` then
+`extract_entities()`, neither depending on the other's result) — the
+single largest avoidable fixed latency cost in the whole turn. Changed to
+`asyncio.gather()`, cutting one full sequential LLM round trip off every
+turn for free.
+
+**Entity extraction always called the LLM when a provider was supplied**
+(a deliberate Phase 4 design, documented then as intentional), even for
+small talk ("Hi", "thanks") that can never contain a semantic entity
+(room category, dietary restriction, etc.). Added a skip via the
+already-existing `is_small_talk()` check — a narrow, safe reduction in
+call volume, not a change to the confidence-gate policy for genuine
+requests.
+
+**Persona and brevity are prompt content, not framework behavior.**
+`identity_block()` (`prompts/templates.py`) previously opened with "You
+are the AI receptionist" — guests don't want to be constantly reminded
+they're talking to software. Rewritten so the model presents as "Aranya,
+a front-desk receptionist" and never volunteers "AI"/"bot" language
+unprompted — **with one deliberate, non-negotiable exception**: if a
+guest directly and explicitly asks whether they're speaking with a person
+or a computer, the model must answer honestly (briefly, without dwelling
+on it) rather than claim to be human. This is a hard line, not a style
+preference — see `docs/rules.md` and general responsible-AI/consumer-
+disclosure norms; pretending to be human on direct, explicit questioning
+would be deceptive regardless of what makes the product feel more
+polished. `channel_block()` was also rewritten to mandate 2-4 sentence
+replies ("the way a real front-desk chat message reads"), not just
+"concise" (too weak — the model was still writing paragraphs).
+
+**Realistic pacing is a frontend concern, not a backend one.** Guests
+expect a short pause before any "typing…" indicator, then a WhatsApp-style
+animated-dots bubble, then the reply — not an instant wall of text.
+Implemented client-side in `ChatWidget.tsx`: a 1200ms delay before the
+typing indicator appears at all, and a 1800ms floor on total time before
+the reply is revealed (only on the success path — a failure surfaces
+immediately, no reason to fake a delay on bad news). The UI label was
+also softened from "AI Concierge · Online" to "Front Desk · Online",
+consistent with the prompt-side persona change above.
+
+---
+
 ## 2026-07-18 — Phase 5: Website Chat Channel — key decisions
 
 **Where the uploaded website codebase landed.** The resort's real website

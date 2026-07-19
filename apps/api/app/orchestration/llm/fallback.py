@@ -67,11 +67,12 @@ class FallbackLLMProvider(LLMProvider):
         tools: list[dict] | None = None,
         response_format: dict | None = None,
         timeout: float = 20.0,
+        max_tokens: int | None = None,
     ) -> LLMResult:
         if self._primary_is_available():
             try:
                 result = await self._primary.complete(
-                    messages, tools=tools, response_format=response_format, timeout=timeout
+                    messages, tools=tools, response_format=response_format, timeout=timeout, max_tokens=max_tokens
                 )
                 self._record_primary_success()
                 return result
@@ -80,7 +81,7 @@ class FallbackLLMProvider(LLMProvider):
 
         try:
             return await self._fallback.complete(
-                messages, tools=tools, response_format=response_format, timeout=timeout
+                messages, tools=tools, response_format=response_format, timeout=timeout, max_tokens=max_tokens
             )
         except LLMProviderError as exc:
             raise AllProvidersFailedError("Both primary and fallback LLM providers failed") from exc

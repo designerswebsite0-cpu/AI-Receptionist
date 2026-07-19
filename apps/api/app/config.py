@@ -75,6 +75,12 @@ class Settings(BaseSettings):
     groq_api_key: str | None = None
     groq_model: str = "llama-3.3-70b-versatile"
     orchestration_max_context_tokens: int = 4000
+    # Caps the model's OUTPUT length — guests expect short, chat-like
+    # replies (a real front-desk chat message, not an essay), and every
+    # completion token costs money and adds latency regardless of whether
+    # the guest wanted that much detail. ~220 tokens is roughly 2-4 short
+    # sentences to a brief paragraph.
+    orchestration_max_response_tokens: int = 220
     orchestration_provider_failure_threshold: int = 3
     orchestration_provider_cooldown_seconds: int = 60
 

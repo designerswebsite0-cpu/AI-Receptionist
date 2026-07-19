@@ -181,6 +181,7 @@ async def _classify_with_llm(text: str, llm_provider: LLMProvider, *, fallback: 
             LLMMessage(role="user", content=prompt),
         ],
         response_format={"type": "json_object"},
+        max_tokens=100,  # a JSON {"intent", "confidence"} object never needs more than this
     )
     try:
         parsed = json.loads(result.text)

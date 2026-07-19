@@ -31,6 +31,7 @@ class OpenAILLMProvider(LLMProvider):
         tools: list[dict] | None = None,
         response_format: dict | None = None,
         timeout: float = 20.0,
+        max_tokens: int | None = None,
     ) -> LLMResult:
         started_at = time.monotonic()
         try:
@@ -40,6 +41,11 @@ class OpenAILLMProvider(LLMProvider):
                 tools=tools,
                 response_format=response_format,
                 timeout=timeout,
+                # max_completion_tokens (not the deprecated max_tokens) is the
+                # parameter name required by reasoning-tier models (o1/gpt-5
+                # class) — also accepted by non-reasoning models, so this is
+                # safe regardless of which model this deployment configures.
+                max_completion_tokens=max_tokens,
             )
         except openai.APIError as exc:
             raise LLMProviderError(f"OpenAI request failed: {exc}") from exc

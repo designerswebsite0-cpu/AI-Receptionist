@@ -111,6 +111,35 @@ async def test_replaying_the_same_message_id_does_not_call_the_llm_again(db_sess
 
 
 @pytest.mark.asyncio
+async def test_small_talk_message_skips_llm_entity_extraction(db_session: AsyncSession):
+    _, conversation = await _make_conversation(db_session)
+    guest_message = await _send_guest_message(db_session, conversation.id, "Hi")
+
+    provider = MockLLMProvider(
+        responses=[
+            LLMResult(text="Hello! How can I help you today?", provider="mock", model="mock-llm", latency_ms=5)
+        ]
+    )
+    result = await orchestrate(
+        db_session,
+        conversation_id=conversation.id,
+        message_id=guest_message.id,
+        guest_message="Hi",
+        channel="webchat",
+        llm_provider=provider,
+        embedding_provider=_EMBEDDING_PROVIDER,
+        reranker=_RERANKER,
+    )
+
+    assert result.response_text == "Hello! How can I help you today?"
+    # Small talk is classified deterministically (no LLM call) and never
+    # carries a semantic entity (room category, dietary restriction, etc.),
+    # so the LLM entity-extraction call is skipped too — only the main
+    # generation call should have run.
+    assert provider.call_count == 1
+
+
+@pytest.mark.asyncio
 async def test_mandatory_handoff_intent_skips_generation_and_escalates_the_conversation(db_session: AsyncSession):
     _, conversation = await _make_conversation(db_session)
     guest_message = await _send_guest_message(db_session, conversation.id, "I want a refund for my stay")

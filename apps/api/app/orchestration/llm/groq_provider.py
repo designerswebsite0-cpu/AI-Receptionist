@@ -39,6 +39,7 @@ class GroqLLMProvider(LLMProvider):
         tools: list[dict] | None = None,
         response_format: dict | None = None,
         timeout: float = 20.0,
+        max_tokens: int | None = None,
     ) -> LLMResult:
         started_at = time.monotonic()
         try:
@@ -48,6 +49,7 @@ class GroqLLMProvider(LLMProvider):
                 tools=tools,
                 response_format=response_format,
                 timeout=timeout,
+                max_tokens=max_tokens,
             )
         except openai.APIError as exc:
             raise LLMProviderError(f"Groq request failed: {exc}") from exc
