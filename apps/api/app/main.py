@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 
+from app.analytics.router import router as analytics_router
 from app.audit.router import router as audit_router
 from app.auth.router import router as auth_router
 from app.config import get_settings
@@ -63,6 +64,7 @@ register_exception_handlers(app)
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(audit_router)
+app.include_router(analytics_router)
 app.include_router(resort_router)
 app.include_router(customers_router)
 app.include_router(conversations_router)

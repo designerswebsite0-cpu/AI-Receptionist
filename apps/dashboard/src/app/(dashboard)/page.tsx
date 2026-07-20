@@ -1,10 +1,15 @@
+import { DashboardOverview } from "@/components/analytics/dashboard-overview";
 import { fetchFromApi } from "@/lib/server-api";
 
 type ResortSettings = { resort_name: string; city: string | null; country: string | null };
 
 export default async function DashboardHomePage() {
-  const resortResponse = await fetchFromApi("/api/v1/resort/settings");
+  const [resortResponse, analyticsResponse] = await Promise.all([
+    fetchFromApi("/api/v1/resort/settings"),
+    fetchFromApi("/api/v1/analytics/dashboard?range=7d"),
+  ]);
   const resort: ResortSettings | null = resortResponse.ok ? (await resortResponse.json()).data : null;
+  const analyticsPayload = await analyticsResponse.json();
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -16,9 +21,11 @@ export default async function DashboardHomePage() {
           )}
         </div>
       )}
-      <p className="text-sm text-charcoal/50">
-        Live metrics, analytics and activity feed land here in Phase X&apos;s Dashboard &amp; Analytics stage.
-      </p>
+      {analyticsResponse.ok ? (
+        <DashboardOverview initialData={analyticsPayload.data} />
+      ) : (
+        <p className="text-sm text-red-600">{analyticsPayload?.error?.message ?? "Could not load analytics."}</p>
+      )}
     </div>
   );
 }
