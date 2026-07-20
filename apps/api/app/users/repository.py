@@ -10,6 +10,17 @@ async def get_user(db: AsyncSession, user_id: uuid.UUID) -> User | None:
     return await db.get(User, user_id)
 
 
+async def get_names_by_ids(db: AsyncSession, user_ids: list[uuid.UUID]) -> dict[uuid.UUID, str | None]:
+    """Batched full_name-or-email lookup — used by the Audit Logs page to
+    show a readable staff name instead of a raw actor_user_id, without an
+    N+1 query per row (same batching pattern as
+    app.customers.repository.get_names_by_ids)."""
+    if not user_ids:
+        return {}
+    result = await db.execute(select(User.id, User.full_name, User.email).where(User.id.in_(user_ids)))
+    return {row[0]: (row[1] or row[2]) for row in result.all()}
+
+
 async def list_users(
     db: AsyncSession,
     *,

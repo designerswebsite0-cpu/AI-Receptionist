@@ -12,6 +12,7 @@ from app.knowledge.indexing import index_source_version
 from app.knowledge.models import KnowledgeIngestionJob, KnowledgeSource, KnowledgeSourceVersion
 from app.knowledge.schemas import SourceGovernanceUpdateRequest, SourceRegisterRequest
 from app.logging import get_logger
+from app.notifications.service import notify
 
 logger = get_logger(__name__)
 
@@ -267,6 +268,14 @@ async def reprocess_source(
             metadata={"error": str(exc)[:500]},
         )
         await db.commit()
+        await notify(
+            db,
+            notification_type="knowledge_ingestion_failed",
+            title=f"Reprocessing failed: {source.title}",
+            body=str(exc)[:500],
+            resource_type="knowledge_source",
+            resource_id=str(source.id),
+        )
         raise
 
     version.processing_status = "completed" if not extracted.pages_needing_ocr else "needs_review"

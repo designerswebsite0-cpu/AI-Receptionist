@@ -12,6 +12,7 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.customers.service import get_customer_or_404
+from app.notifications.service import notify
 from app.orchestration import repository, service
 
 _ENQUIRY_REQUEST_TYPES = {
@@ -36,6 +37,16 @@ async def _handle_enquiry(
         created_by="ai",
         actor_user_id=actor_user_id,
     )
+    if request_type == "booking_enquiry":
+        check_in = tool_input.get("check_in_date")
+        await notify(
+            db,
+            notification_type="booking_enquiry_received",
+            title="New room booking enquiry",
+            body=f"Check-in: {check_in}" if check_in else None,
+            resource_type="service_request",
+            resource_id=str(request.id),
+        )
     return {"service_request_id": str(request.id), "status": request.status, "request_type": request.request_type}
 
 

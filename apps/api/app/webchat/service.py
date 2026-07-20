@@ -21,6 +21,7 @@ from app.customers import repository as customers_repository
 from app.customers import service as customers_service
 from app.customers.schemas import ContactIn, CustomerCreateRequest, CustomerUpdateRequest
 from app.errors import ConflictError
+from app.feedback import service as feedback_service
 from app.knowledge.embeddings import EmbeddingProvider
 from app.knowledge.retrieval.reranker import Reranker
 from app.messages import repository as messages_repository
@@ -210,6 +211,19 @@ async def submit_feedback(
         metadata={"rating": rating, "comment": comment, "conversation_id": str(session.conversation_id)},
     )
     await db.commit()
+
+    # Additive: the audit-log write above is untouched (already-working
+    # behavior) — this also inserts one structured row so the guest's
+    # thumbs-up/down surfaces as a real Customer Feedback dashboard item
+    # (Phase X Stage 7) instead of only being visible by grepping audit logs.
+    await feedback_service.record_webchat_feedback(
+        db,
+        rating=rating,
+        comment=comment,
+        conversation_id=session.conversation_id,
+        customer_id=session.customer_id,
+        turn_id=turn_id,
+    )
 
 
 async def capture_contact(

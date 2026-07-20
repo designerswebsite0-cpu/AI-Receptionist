@@ -26,6 +26,7 @@ from app.knowledge.retrieval.reranker import Reranker
 from app.messages import repository as messages_repository
 from app.messages import service as messages_service
 from app.messages.schemas import MessageCreateRequest
+from app.notifications.service import notify
 from app.orchestration import memory
 from app.orchestration import repository as orch_repository
 from app.orchestration import service as orch_service
@@ -487,6 +488,14 @@ async def orchestrate(
     if handoff.required:
         await conversations_service.change_status(
             db, conversation_id=conversation_id, new_status="escalated", actor_user_id=actor_user_id
+        )
+        await notify(
+            db,
+            notification_type="handoff_required",
+            title="Guest needs human help",
+            body=handoff.summary or handoff.reason_code,
+            resource_type="conversation",
+            resource_id=str(conversation_id),
         )
     await db.commit()
 
