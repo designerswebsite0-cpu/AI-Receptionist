@@ -14,7 +14,7 @@ from app.errors import UnauthorizedError
 from app.rate_limit import enforce_rate_limit
 from app.resort.repository import get_resort_settings
 from app.users.models import User
-from app.users.service import upsert_user_from_identity
+from app.users.service import mark_login, upsert_user_from_identity
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -29,7 +29,8 @@ async def login(
     tokens = await service.login(body.email, body.password)
 
     identity = verify_access_token(tokens["access_token"])
-    await upsert_user_from_identity(db, identity)
+    user = await upsert_user_from_identity(db, identity)
+    await mark_login(db, user)
     await record_audit_event(
         db,
         actor_user_id=uuid.UUID(identity.user_id),
@@ -103,6 +104,9 @@ async def me(user: User = Depends(get_current_user), db: AsyncSession = Depends(
             "email": user.email,
             "full_name": user.full_name,
             "avatar_url": user.avatar_url,
+            "role": user.role,
+            "status": user.status,
+            "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
             "resort_configured": resort_settings is not None,
         }
     )

@@ -10,14 +10,14 @@ type MeResponse = {
   email: string;
   full_name: string | null;
   avatar_url: string | null;
+  role: string | null;
+  status: string | null;
+  last_login_at: string | null;
   resort_configured: boolean;
 };
 
 /** The one place every dashboard route's auth check now lives — replaces
- * the `getServerAccessToken()` + redirect duplicated across every page.
- * `role`/`status`/`last_login_at` aren't real columns yet (Staff
- * Management, Phase X Stage 4), so they default to the safe,
- * informational-only values the brief calls for until then. */
+ * the `getServerAccessToken()` + redirect duplicated across every page. */
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const meResponse = await fetchFromApi("/api/v1/auth/me");
   if (meResponse.status === 401) {
@@ -47,9 +47,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
     email: me.email,
     full_name: me.full_name,
     avatar_url: me.avatar_url,
-    role: null,
-    status: null,
-    last_login_at: null,
+    role: me.role,
+    status: me.status,
+    last_login_at: me.last_login_at,
   };
 
   return (

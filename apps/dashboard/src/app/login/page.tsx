@@ -10,6 +10,20 @@ const REASON_MESSAGES: Record<string, string> = {
   expired: "Your session has expired. Please sign in again.",
 };
 
+/** Distinguishes *why* login failed rather than always showing one
+ * generic message — a wrong password, a rate limit, and "our own server
+ * couldn't be reached" are different problems with different next steps
+ * for the person looking at this screen. */
+function errorMessageForResponse(status: number, code: string | undefined, message: string | undefined): string {
+  if (status === 401 || status === 422) return "Incorrect email or password.";
+  if (status === 429) return "Too many sign-in attempts. Please wait a moment and try again.";
+  if (code === "UPSTREAM_UNREACHABLE" || status === 502 || status === 503) {
+    return "Our server is temporarily unavailable. Please try again shortly.";
+  }
+  if (status >= 500) return "Something went wrong on our end. Please try again in a moment.";
+  return message ?? "Something went wrong. Please try again.";
+}
+
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -44,11 +58,7 @@ function LoginForm() {
     setSubmitting(false);
 
     if (!response.ok || !payload?.success) {
-      setError(
-        response.status === 401 || response.status === 422
-          ? "Incorrect email or password."
-          : payload?.error?.message ?? "Something went wrong. Please try again.",
-      );
+      setError(errorMessageForResponse(response.status, payload?.error?.code, payload?.error?.message));
       return;
     }
     router.push("/");

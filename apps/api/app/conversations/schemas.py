@@ -31,6 +31,11 @@ class ConversationUpdateRequest(BaseModel):
     priority: str | None = None
     summary: str | None = None
     tags: list[str] | None = None
+    # Explicitly nullable and distinct from "not provided" (exclude_unset
+    # in the service layer) — sending {"assigned_agent_id": null} is how
+    # the dashboard unassigns a conversation, reusing this same endpoint
+    # rather than a dedicated one.
+    assigned_agent_id: uuid.UUID | None = None
 
     @field_validator("priority")
     @classmethod
@@ -85,5 +90,7 @@ class ConversationOut(BaseModel):
     summary: str | None
     tags: list[str]
     conversation_metadata: dict
+    unread_count: int = 0
+    customer_name: str | None = None
 
     model_config = {"from_attributes": True}

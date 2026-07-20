@@ -5,9 +5,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.service import record_audit_event
 from app.errors import ConflictError, NotFoundError, ValidationErrorApp
-from app.knowledge import repository
-from app.knowledge.models import KnowledgeSource, KnowledgeSourceVersion
+from app.knowledge import repository, storage, validation
+from app.knowledge.embeddings import EmbeddingProvider
+from app.knowledge.extraction.registry import extract
+from app.knowledge.indexing import index_source_version
+from app.knowledge.models import KnowledgeIngestionJob, KnowledgeSource, KnowledgeSourceVersion
 from app.knowledge.schemas import SourceGovernanceUpdateRequest, SourceRegisterRequest
+from app.logging import get_logger
+
+logger = get_logger(__name__)
 
 # Visibilities that are never eligible for retrieval regardless of other
 # governance state — archive/template sources are history/packaging
@@ -202,6 +208,120 @@ async def archive_source(db: AsyncSession, *, source_id: uuid.UUID, actor_user_i
     await db.commit()
     await db.refresh(source)
     return source
+
+
+async def reprocess_source(
+    db: AsyncSession, *, source_id: uuid.UUID, actor_user_id: uuid.UUID | None, embedding_provider: EmbeddingProvider
+) -> KnowledgeSource:
+    """Re-runs extraction -> chunking -> embedding against the file already
+    stored for this source's current version — the same recovery path used
+    manually to fix a stuck/mis-chunked source (e.g. the restaurant menu
+    incident), now exposed as a real dashboard action instead of a one-off
+    script. Website sources aren't covered here; a website source has no
+    single stored file to re-extract — re-ingesting it means triggering a
+    fresh crawl (POST /website/crawl), a distinct, already-existing flow."""
+    source = await get_source_or_404(db, source_id)
+    if source.source_type != "document":
+        raise ValidationErrorApp("Only document sources can be reprocessed; website sources use a fresh crawl")
+    if not source.storage_path or source.current_version_id is None:
+        raise ValidationErrorApp("Source has no stored file to reprocess")
+
+    version = await repository.get_version(db, source.current_version_id)
+    if version is None:
+        raise ValidationErrorApp("Source has no current version to reprocess")
+
+    job = KnowledgeIngestionJob(
+        job_type="reprocess",
+        job_status="running",
+        source_id=source.id,
+        started_at=datetime.now(UTC),
+        created_by=actor_user_id,
+    )
+    db.add(job)
+
+    source.processing_status = "extracting"
+    version.processing_status = "extracting"
+    version.error_message = None
+    await db.commit()
+
+    try:
+        content = await storage.download_file(source.storage_path)
+        validation_result = validation.validate_upload(source.original_filename or "reprocessed", content)
+        extracted = extract(validation_result.file_format, content)
+        result = await index_source_version(
+            db, source=source, version=version, extracted=extracted, provider=embedding_provider
+        )
+    except Exception as exc:
+        version.processing_status = "failed"
+        version.error_message = str(exc)[:4000]
+        source.processing_status = "failed"
+        job.job_status = "failed"
+        job.completed_at = datetime.now(UTC)
+        job.error_message = str(exc)[:4000]
+        await record_audit_event(
+            db,
+            actor_user_id=actor_user_id,
+            action="knowledge_source.reprocess_failed",
+            resource_type="knowledge_source",
+            resource_id=str(source.id),
+            metadata={"error": str(exc)[:500]},
+        )
+        await db.commit()
+        raise
+
+    version.processing_status = "completed" if not extracted.pages_needing_ocr else "needs_review"
+    source.processing_status = version.processing_status
+    job.job_status = "completed"
+    job.completed_at = datetime.now(UTC)
+    job.progress_current = 1
+    job.progress_total = 1
+    job.result_summary = {
+        "chunks_created": result.chunks_created,
+        "chunks_updated": result.chunks_updated,
+        "chunks_deleted": result.chunks_deleted,
+        "chunks_embedded": result.chunks_embedded,
+    }
+
+    await record_audit_event(
+        db,
+        actor_user_id=actor_user_id,
+        action="knowledge_source.reprocessed",
+        resource_type="knowledge_source",
+        resource_id=str(source.id),
+        metadata=job.result_summary,
+    )
+    await db.commit()
+    await db.refresh(source)
+    return source
+
+
+async def delete_source(db: AsyncSession, *, source_id: uuid.UUID, actor_user_id: uuid.UUID | None) -> None:
+    """Hard delete — cascades to versions/chunks/crawl-runs via the FK
+    ondelete=CASCADE already declared on those tables (see models.py).
+    Guarded against removing anything still live: a source must be
+    archived or rejected first, so this can never be used to silently
+    yank guest-visible content out from under an in-flight conversation."""
+    source = await get_source_or_404(db, source_id)
+    if source.status == "active" or source.retrieval_enabled:
+        raise ConflictError("Cannot delete an active, retrieval-enabled source — archive it first")
+
+    await record_audit_event(
+        db,
+        actor_user_id=actor_user_id,
+        action="knowledge_source.deleted",
+        resource_type="knowledge_source",
+        resource_id=str(source.id),
+        before_state={"title": source.title, "status": source.status, "visibility": source.visibility},
+        metadata={"source_id": source.source_id},
+    )
+    if source.storage_path:
+        try:
+            await storage.delete_file(source.storage_path)
+        except Exception:
+            logger.warning("knowledge_source_delete_file_failed", extra={"storage_path": source.storage_path})
+
+    await db.delete(source)
+    await db.commit()
 
 
 async def record_source_version(

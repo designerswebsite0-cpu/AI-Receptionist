@@ -16,6 +16,8 @@ from app.knowledge.indexing import index_source_version
 from app.knowledge.retrieval import service as retrieval_service
 from app.knowledge.retrieval.reranker import HeuristicReranker
 from app.knowledge.schemas import (
+    ChunkListResponse,
+    ChunkOut,
     CrawlRunOut,
     IngestionJobOut,
     JobListResponse,
@@ -178,6 +180,53 @@ async def list_source_versions(
     await service.get_source_or_404(db, source_id)
     versions = await repository.list_versions(db, source_id)
     return success([SourceVersionOut.model_validate(v).model_dump(mode="json") for v in versions])
+
+
+@router.post("/sources/{source_id}/reprocess")
+async def reprocess_source(
+    source_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    embedding_provider: EmbeddingProvider = Depends(get_embedding_provider),
+) -> dict:
+    source = await service.reprocess_source(
+        db, source_id=source_id, actor_user_id=user.id, embedding_provider=embedding_provider
+    )
+    return success(SourceOut.model_validate(source).model_dump(mode="json"))
+
+
+@router.delete("/sources/{source_id}")
+async def delete_source(
+    source_id: uuid.UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> dict:
+    await service.delete_source(db, source_id=source_id, actor_user_id=user.id)
+    return success({"deleted": True})
+
+
+@router.get("/sources/{source_id}/chunks")
+async def list_source_chunks(
+    source_id: uuid.UUID,
+    chunk_type: str | None = Query(default=None),
+    search: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    await service.get_source_or_404(db, source_id)
+    params = PageParams(page=page, page_size=page_size)
+    chunks, total = await repository.list_chunks_paginated(
+        db,
+        source_id=source_id,
+        chunk_type=chunk_type,
+        search=search,
+        offset=params.offset,
+        limit=params.page_size,
+    )
+    response = ChunkListResponse(
+        items=[ChunkOut.model_validate(c) for c in chunks], total=total, offset=params.offset, limit=params.page_size
+    )
+    return success(response.model_dump(mode="json"))
 
 
 # --- media ----------------------------------------------------------------

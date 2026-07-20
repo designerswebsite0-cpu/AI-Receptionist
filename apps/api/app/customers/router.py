@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.pagination import PageParams, build_page_meta
 from app.common.responses import success
+from app.conversations import repository as conversations_repository
 from app.customers import repository, service
 from app.customers.schemas import (
     ContactIn,
@@ -44,12 +45,30 @@ async def list_customers(
     customers, total = await repository.search_customers(
         db, search=search, tag=tag, offset=params.offset, limit=params.page_size
     )
-    return success(
-        {
-            "items": [CustomerOut.model_validate(c).model_dump(mode="json") for c in customers],
-            "meta": build_page_meta(params, total).model_dump(),
-        }
-    )
+
+    customer_ids = [c.id for c in customers]
+    conversation_stats = await conversations_repository.get_conversation_stats_by_customer(db, customer_ids)
+    tags_by_customer = await repository.get_tags_by_customer_ids(db, customer_ids)
+    contacts_by_customer = await repository.get_contacts_by_customer_ids(db, customer_ids)
+
+    items = []
+    for c in customers:
+        payload = CustomerOut.model_validate(c).model_dump(mode="json")
+        conversation_count, last_message_at = conversation_stats.get(c.id, (0, None))
+        payload["tags"] = tags_by_customer.get(c.id, [])
+        payload["is_vip"] = "vip" in payload["tags"]
+        payload["conversation_count"] = conversation_count
+        payload["last_interaction_at"] = last_message_at.isoformat() if last_message_at else None
+        contacts = contacts_by_customer.get(c.id, [])
+        primary_contact = next((ct for ct in contacts if ct.is_primary), contacts[0] if contacts else None)
+        payload["primary_contact"] = (
+            {"contact_type": primary_contact.contact_type, "value": primary_contact.value}
+            if primary_contact
+            else None
+        )
+        items.append(payload)
+
+    return success({"items": items, "meta": build_page_meta(params, total).model_dump()})
 
 
 @router.get("/{customer_id}")
@@ -61,6 +80,9 @@ async def get_customer(
     customer = await service.get_customer_or_404(db, customer_id)
     contacts = await repository.list_contacts(db, customer_id)
     tags = await repository.list_tags(db, customer_id)
+    conversation_stats = await conversations_repository.get_conversation_stats_by_customer(db, [customer_id])
+    conversation_count, last_message_at = conversation_stats.get(customer_id, (0, None))
+
     payload = CustomerOut.model_validate(customer).model_dump(mode="json")
     payload["contacts"] = [
         {
@@ -73,6 +95,9 @@ async def get_customer(
         for c in contacts
     ]
     payload["tags"] = [t.tag for t in tags]
+    payload["is_vip"] = "vip" in payload["tags"]
+    payload["conversation_count"] = conversation_count
+    payload["last_interaction_at"] = last_message_at.isoformat() if last_message_at else None
     return success(payload)
 
 

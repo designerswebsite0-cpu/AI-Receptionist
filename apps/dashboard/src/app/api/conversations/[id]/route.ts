@@ -7,3 +7,11 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const payload = await upstream.json();
   return NextResponse.json(payload, { status: upstream.status });
 }
+
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const body = await request.text();
+  const upstream = await fetchFromApi(`/api/v1/conversations/${id}`, { method: "PATCH", body });
+  const payload = await upstream.json();
+  return NextResponse.json(payload, { status: upstream.status });
+}

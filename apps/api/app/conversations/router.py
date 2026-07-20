@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.pagination import PageParams, build_page_meta
 from app.common.responses import success
 from app.conversations import repository, service
-from app.conversations.constants import CHANNELS, STATUSES
+from app.conversations.constants import CHANNELS, PRIORITIES, STATUSES
 from app.conversations.schemas import (
     AssignRequest,
     ConversationCreateRequest,
@@ -15,6 +15,7 @@ from app.conversations.schemas import (
     StateChangeRequest,
     StatusChangeRequest,
 )
+from app.customers import repository as customers_repository
 from app.database import get_db
 from app.deps import get_current_user
 from app.errors import ValidationErrorApp
@@ -33,7 +34,7 @@ async def create_conversation(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     conversation = await service.create_conversation(db, body=body, actor_user_id=user.id)
-    return success(_conversation_payload(conversation))
+    return success(_conversation_payload(conversation, 0))
 
 
 @router.get("")
@@ -42,6 +43,9 @@ async def list_conversations(
     channel: str | None = Query(default=None),
     assigned_agent_id: uuid.UUID | None = Query(default=None),
     customer_id: uuid.UUID | None = Query(default=None),
+    priority: str | None = Query(default=None),
+    ai_active: bool | None = Query(default=None),
+    unread: bool | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     user: User = Depends(get_current_user),
@@ -51,6 +55,8 @@ async def list_conversations(
         raise ValidationErrorApp(f"status must be one of {STATUSES}")
     if channel is not None and channel not in CHANNELS:
         raise ValidationErrorApp(f"channel must be one of {CHANNELS}")
+    if priority is not None and priority not in PRIORITIES:
+        raise ValidationErrorApp(f"priority must be one of {PRIORITIES}")
 
     params = PageParams(page=page, page_size=page_size)
     conversations, total = await repository.search_conversations(
@@ -59,12 +65,22 @@ async def list_conversations(
         channel=channel,
         assigned_agent_id=assigned_agent_id,
         customer_id=customer_id,
+        priority=priority,
+        ai_active=ai_active,
+        unread=unread,
         offset=params.offset,
         limit=params.page_size,
     )
+
+    unread_counts = await messages_repository.count_unread_by_conversation(db, [c.id for c in conversations])
+    customer_names = await customers_repository.get_names_by_ids(db, [c.customer_id for c in conversations])
+
     return success(
         {
-            "items": [_conversation_payload(c) for c in conversations],
+            "items": [
+                _conversation_payload(c, unread_counts.get(c.id, 0), customer_names.get(c.customer_id))
+                for c in conversations
+            ],
             "meta": build_page_meta(params, total).model_dump(),
         }
     )
@@ -77,7 +93,9 @@ async def get_conversation(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     conversation = await service.get_conversation_or_404(db, conversation_id)
-    return success(_conversation_payload(conversation))
+    unread_count = await messages_repository.count_unread(db, conversation_id)
+    customer = await customers_repository.get_customer(db, conversation.customer_id)
+    return success(_conversation_payload(conversation, unread_count, customer.full_name if customer else None))
 
 
 @router.patch("/{conversation_id}")
@@ -90,7 +108,7 @@ async def update_conversation(
     conversation = await service.update_conversation(
         db, conversation_id=conversation_id, body=body, actor_user_id=user.id
     )
-    return success(_conversation_payload(conversation))
+    return success(await _payload_with_unread(db, conversation))
 
 
 @router.post("/{conversation_id}/assign")
@@ -103,7 +121,7 @@ async def assign_conversation(
     conversation = await service.assign_conversation(
         db, conversation_id=conversation_id, agent_user_id=body.agent_user_id, actor_user_id=user.id
     )
-    return success(_conversation_payload(conversation))
+    return success(await _payload_with_unread(db, conversation))
 
 
 @router.post("/{conversation_id}/status")
@@ -116,7 +134,7 @@ async def change_status(
     conversation = await service.change_status(
         db, conversation_id=conversation_id, new_status=body.status, actor_user_id=user.id
     )
-    return success(_conversation_payload(conversation))
+    return success(await _payload_with_unread(db, conversation))
 
 
 @router.post("/{conversation_id}/close")
@@ -126,7 +144,7 @@ async def close_conversation(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     conversation = await service.close_conversation(db, conversation_id=conversation_id, actor_user_id=user.id)
-    return success(_conversation_payload(conversation))
+    return success(await _payload_with_unread(db, conversation))
 
 
 @router.post("/{conversation_id}/state")
@@ -144,7 +162,7 @@ async def change_dialogue_state(
         metadata=body.metadata,
         actor_user_id=user.id,
     )
-    return success(_conversation_payload(conversation))
+    return success(await _payload_with_unread(db, conversation))
 
 
 @router.get("/{conversation_id}/messages")
@@ -192,5 +210,38 @@ async def mark_message_read(
     return success(MessageOut.model_validate(message).model_dump(mode="json"))
 
 
-def _conversation_payload(conversation) -> dict:
-    return ConversationOut.model_validate(conversation).model_dump(mode="json")
+@router.post("/{conversation_id}/read")
+async def mark_conversation_read(
+    conversation_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Inbox "mark as read" — every unread guest/AI/system message in the
+    conversation at once, not one message_id at a time."""
+    messages_marked = await messages_service.mark_conversation_read(
+        db, conversation_id=conversation_id, actor_user_id=user.id
+    )
+    return success({"messages_marked": messages_marked})
+
+
+@router.post("/{conversation_id}/unread")
+async def mark_conversation_unread(
+    conversation_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Inbox "mark as unread" — flags the conversation for another look."""
+    await messages_service.mark_conversation_unread(db, conversation_id=conversation_id, actor_user_id=user.id)
+    return success({"marked_unread": True})
+
+
+def _conversation_payload(conversation, unread_count: int, customer_name: str | None = None) -> dict:
+    payload = ConversationOut.model_validate(conversation).model_dump(mode="json")
+    payload["unread_count"] = unread_count
+    payload["customer_name"] = customer_name
+    return payload
+
+
+async def _payload_with_unread(db: AsyncSession, conversation) -> dict:
+    unread_count = await messages_repository.count_unread(db, conversation.id)
+    return _conversation_payload(conversation, unread_count)

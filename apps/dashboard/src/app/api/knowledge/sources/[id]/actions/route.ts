@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchFromApi } from "@/lib/server-api";
 
-const VALID_ACTIONS = new Set(["approve", "reject", "activate", "archive"]);
+const VALID_ACTIONS = new Set(["approve", "reject", "activate", "archive", "reprocess"]);
 
 /** Consolidates the backend's 4 separate action endpoints into one route
  * for the dashboard's action buttons — a dashboard-layer convenience,

@@ -15,3 +15,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const payload = await upstream.json();
   return NextResponse.json(payload, { status: upstream.status });
 }
+
+export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const upstream = await fetchFromApi(`/api/v1/knowledge/sources/${id}`, { method: "DELETE" });
+  const payload = await upstream.json();
+  return NextResponse.json(payload, { status: upstream.status });
+}

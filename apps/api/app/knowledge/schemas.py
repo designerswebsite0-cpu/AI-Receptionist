@@ -190,6 +190,32 @@ class JobListResponse(BaseModel):
     limit: int
 
 
+class ChunkOut(BaseModel):
+    id: uuid.UUID
+    source_id: uuid.UUID
+    version_id: uuid.UUID
+    chunk_key: str
+    chunk_type: str
+    chunk_index: int
+    content_raw: str
+    section_title: str | None
+    heading_path: str | None
+    page_number: int | None
+    token_count: int | None
+    status: str
+    retrieval_enabled: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ChunkListResponse(BaseModel):
+    items: list[ChunkOut]
+    total: int
+    offset: int
+    limit: int
+
+
 class SearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     guest_only: bool = True

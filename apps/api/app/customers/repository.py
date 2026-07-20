@@ -11,6 +11,16 @@ async def get_customer(db: AsyncSession, customer_id: uuid.UUID) -> Customer | N
     return result.scalar_one_or_none()
 
 
+async def get_names_by_ids(db: AsyncSession, customer_ids: list[uuid.UUID]) -> dict[uuid.UUID, str | None]:
+    """Batched full_name lookup for a page of conversations (the Inbox
+    list) — one query instead of N, matching the same batching pattern as
+    app.messages.repository.count_unread_by_conversation."""
+    if not customer_ids:
+        return {}
+    result = await db.execute(select(Customer.id, Customer.full_name).where(Customer.id.in_(customer_ids)))
+    return dict(result.all())
+
+
 async def search_customers(
     db: AsyncSession,
     *,
@@ -70,6 +80,36 @@ async def list_notes(db: AsyncSession, customer_id: uuid.UUID) -> list[CustomerN
 async def list_tags(db: AsyncSession, customer_id: uuid.UUID) -> list[CustomerTag]:
     result = await db.execute(select(CustomerTag).where(CustomerTag.customer_id == customer_id))
     return list(result.scalars().all())
+
+
+async def get_tags_by_customer_ids(db: AsyncSession, customer_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[str]]:
+    """Batched tag lookup for a page of customers (the Customer 360 list)
+    — one query instead of N."""
+    if not customer_ids:
+        return {}
+    result = await db.execute(
+        select(CustomerTag.customer_id, CustomerTag.tag).where(CustomerTag.customer_id.in_(customer_ids))
+    )
+    grouped: dict[uuid.UUID, list[str]] = {cid: [] for cid in customer_ids}
+    for customer_id, tag in result.all():
+        grouped[customer_id].append(tag)
+    return grouped
+
+
+async def get_contacts_by_customer_ids(
+    db: AsyncSession, customer_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, list[CustomerContact]]:
+    """Batched contact lookup for a page of customers — one query instead
+    of N."""
+    if not customer_ids:
+        return {}
+    result = await db.execute(
+        select(CustomerContact).where(CustomerContact.customer_id.in_(customer_ids))
+    )
+    grouped: dict[uuid.UUID, list[CustomerContact]] = {cid: [] for cid in customer_ids}
+    for contact in result.scalars().all():
+        grouped[contact.customer_id].append(contact)
+    return grouped
 
 
 async def get_tag(db: AsyncSession, customer_id: uuid.UUID, tag: str) -> CustomerTag | None:

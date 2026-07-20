@@ -138,6 +138,31 @@ async def list_chunks_for_source(db: AsyncSession, source_id: uuid.UUID) -> list
     return list(result.scalars().all())
 
 
+async def list_chunks_paginated(
+    db: AsyncSession,
+    *,
+    source_id: uuid.UUID,
+    chunk_type: str | None = None,
+    search: str | None = None,
+    offset: int = 0,
+    limit: int = 50,
+) -> tuple[list[KnowledgeChunk], int]:
+    query = select(KnowledgeChunk).where(KnowledgeChunk.source_id == source_id)
+    count_query = select(func.count()).select_from(KnowledgeChunk).where(KnowledgeChunk.source_id == source_id)
+
+    if chunk_type:
+        query = query.where(KnowledgeChunk.chunk_type == chunk_type)
+        count_query = count_query.where(KnowledgeChunk.chunk_type == chunk_type)
+    if search:
+        pattern = f"%{search}%"
+        query = query.where(KnowledgeChunk.content_raw.ilike(pattern))
+        count_query = count_query.where(KnowledgeChunk.content_raw.ilike(pattern))
+
+    total = (await db.execute(count_query)).scalar_one()
+    result = await db.execute(query.order_by(KnowledgeChunk.chunk_index.asc()).offset(offset).limit(limit))
+    return list(result.scalars().all()), total
+
+
 async def delete_chunks_by_ids(db: AsyncSession, chunk_ids: list[uuid.UUID]) -> None:
     if not chunk_ids:
         return

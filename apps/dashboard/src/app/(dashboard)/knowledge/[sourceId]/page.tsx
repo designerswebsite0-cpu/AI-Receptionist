@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { SourceActions } from "@/components/source-actions";
 import { StatusBadge } from "@/components/status-badge";
 import { fetchFromApi } from "@/lib/server-api";
@@ -31,6 +32,7 @@ type SourceVersionOut = {
   extraction_method: string | null;
   ocr_used: boolean;
   processing_status: string;
+  error_message: string | null;
   is_current: boolean;
   created_at: string;
 };
@@ -75,7 +77,13 @@ export default async function SourceDetailPage({ params }: { params: Promise<{ s
 
       <div className="mb-6 rounded-lg border border-sand bg-white p-4">
         <h2 className="mb-3 text-sm font-semibold text-charcoal">Governance actions</h2>
-        <SourceActions sourceId={source.id} approvalStatus={source.approval_status} />
+        <SourceActions
+          sourceId={source.id}
+          approvalStatus={source.approval_status}
+          status={source.status}
+          retrievalEnabled={source.retrieval_enabled}
+          sourceType={source.source_type}
+        />
         <p className="mt-3 text-xs text-charcoal/40">
           {source.retrieval_enabled
             ? "This source is live and eligible for retrieval."
@@ -83,8 +91,13 @@ export default async function SourceDetailPage({ params }: { params: Promise<{ s
         </p>
       </div>
 
-      <div className="rounded-lg border border-sand bg-white p-4">
-        <h2 className="mb-3 text-sm font-semibold text-charcoal">Versions</h2>
+      <div className="mb-6 rounded-lg border border-sand bg-white p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-charcoal">Versions</h2>
+          <Link href={`/knowledge/${source.id}/chunks`} className="text-xs font-medium text-accent hover:underline">
+            Browse chunks →
+          </Link>
+        </div>
         {versions.length === 0 && <p className="text-sm text-charcoal/50">No versions recorded yet.</p>}
         {versions.length > 0 && (
           <table className="w-full text-sm">
@@ -100,18 +113,21 @@ export default async function SourceDetailPage({ params }: { params: Promise<{ s
             <tbody>
               {versions.map((version) => (
                 <tr key={version.id} className="border-b border-sand/50 last:border-0">
-                  <td className="py-1.5 pr-4">
+                  <td className="py-1.5 pr-4 align-top">
                     v{version.version_number}
                     {version.is_current && <span className="ml-1 text-xs text-charcoal/40">(current)</span>}
                   </td>
-                  <td className="py-1.5 pr-4">{version.page_count ?? "—"}</td>
-                  <td className="py-1.5 pr-4">{version.word_count ?? "—"}</td>
-                  <td className="py-1.5 pr-4">
+                  <td className="py-1.5 pr-4 align-top">{version.page_count ?? "—"}</td>
+                  <td className="py-1.5 pr-4 align-top">{version.word_count ?? "—"}</td>
+                  <td className="py-1.5 pr-4 align-top">
                     {version.extraction_method ?? "—"}
                     {version.ocr_used && <span className="ml-1 text-xs text-charcoal/40">(OCR)</span>}
                   </td>
-                  <td className="py-1.5 pr-4">
+                  <td className="py-1.5 pr-4 align-top">
                     <StatusBadge value={version.processing_status} />
+                    {version.error_message && (
+                      <p className="mt-1 max-w-xs text-xs text-red-600">{version.error_message}</p>
+                    )}
                   </td>
                 </tr>
               ))}

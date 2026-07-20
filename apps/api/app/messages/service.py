@@ -83,3 +83,45 @@ async def mark_read(db: AsyncSession, *, message_id: uuid.UUID, actor_user_id: u
     await db.commit()
     await db.refresh(message)
     return message
+
+
+async def mark_conversation_read(
+    db: AsyncSession, *, conversation_id: uuid.UUID, actor_user_id: uuid.UUID | None
+) -> int:
+    """Inbox-level "mark read" — bulk version of mark_read, since a staff
+    member opening a thread (or explicitly clearing its unread state)
+    means every unread message in it, not one at a time."""
+    await get_conversation_or_404(db, conversation_id)
+    changed = await repository.mark_all_read(db, conversation_id)
+    if changed:
+        await record_audit_event(
+            db,
+            actor_user_id=actor_user_id,
+            action="conversation.marked_read",
+            resource_type="conversation",
+            resource_id=str(conversation_id),
+            metadata={"messages_marked": changed},
+        )
+        await db.commit()
+    return changed
+
+
+async def mark_conversation_unread(
+    db: AsyncSession, *, conversation_id: uuid.UUID, actor_user_id: uuid.UUID | None
+) -> None:
+    """Inbox-level "mark unread" — flags the conversation as needing
+    another look by nulling the most recent guest/AI message's read_at
+    (see repository.mark_latest_unread's docstring for why there's no
+    separate unread flag/column)."""
+    await get_conversation_or_404(db, conversation_id)
+    message = await repository.mark_latest_unread(db, conversation_id)
+    if message is not None:
+        await record_audit_event(
+            db,
+            actor_user_id=actor_user_id,
+            action="conversation.marked_unread",
+            resource_type="conversation",
+            resource_id=str(conversation_id),
+            metadata={},
+        )
+        await db.commit()

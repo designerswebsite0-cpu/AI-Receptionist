@@ -15,6 +15,8 @@ from app.logging import configure_logging, get_logger
 from app.middleware import RequestContextMiddleware
 from app.orchestration.router import router as orchestration_router
 from app.resort.router import router as resort_router
+from app.service_requests.router import router as service_requests_router
+from app.users.router import router as users_router
 from app.webchat.router import router as webchat_router
 
 settings = get_settings()
@@ -62,4 +64,6 @@ app.include_router(customers_router)
 app.include_router(conversations_router)
 app.include_router(knowledge_router)
 app.include_router(orchestration_router)
+app.include_router(users_router)
+app.include_router(service_requests_router)
 app.include_router(webchat_router)
