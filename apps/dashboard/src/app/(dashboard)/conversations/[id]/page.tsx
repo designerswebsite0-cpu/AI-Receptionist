@@ -1,8 +1,6 @@
-import { redirect } from "next/navigation";
 import { ConversationAiControls } from "@/components/conversation-ai-controls";
-import { DashboardNav } from "@/components/dashboard-nav";
 import { StatusBadge } from "@/components/status-badge";
-import { fetchFromApi, getServerAccessToken } from "@/lib/server-api";
+import { fetchFromApi } from "@/lib/server-api";
 
 type ConversationOut = {
   id: string;
@@ -47,9 +45,6 @@ type OrchestrationTurnOut = {
 };
 
 export default async function ConversationDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const token = await getServerAccessToken();
-  if (!token) redirect("/login");
-
   const { id } = await params;
   const [conversationRes, messagesRes, stateRes, turnsRes] = await Promise.all([
     fetchFromApi(`/api/v1/conversations/${id}`),
@@ -60,10 +55,9 @@ export default async function ConversationDetailPage({ params }: { params: Promi
 
   if (conversationRes.status === 404) {
     return (
-      <main className="mx-auto max-w-5xl px-4 py-10">
-        <DashboardNav />
+      <div className="mx-auto max-w-5xl">
         <p className="text-sm text-red-600">Conversation not found.</p>
-      </main>
+      </div>
     );
   }
 
@@ -76,16 +70,14 @@ export default async function ConversationDetailPage({ params }: { params: Promi
   const turns: OrchestrationTurnOut[] = turnsRes.ok ? turnsPayload.data.items : [];
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-10">
-      <DashboardNav />
-
+    <div className="mx-auto max-w-5xl">
       <div className="mb-6 flex items-start justify-between">
         <div>
-          <h1 className="text-lg font-semibold">Conversation ({conversation.channel})</h1>
+          <h1 className="text-lg font-semibold text-charcoal">Conversation ({conversation.channel})</h1>
           <div className="mt-2 flex flex-wrap gap-2">
             <StatusBadge value={conversation.status} />
             <StatusBadge value={conversation.priority} />
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-charcoal/40">
               {conversation.current_state}
               {conversation.flow_state && ` / ${conversation.flow_state}`}
             </span>
@@ -95,29 +87,29 @@ export default async function ConversationDetailPage({ params }: { params: Promi
       </div>
 
       {conversation.summary && (
-        <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4">
-          <h2 className="mb-1 text-sm font-semibold">AI-generated summary</h2>
-          <p className="text-sm text-gray-600">{conversation.summary}</p>
+        <div className="mb-6 rounded-lg border border-sand bg-white p-4">
+          <h2 className="mb-1 text-sm font-semibold text-charcoal">AI-generated summary</h2>
+          <p className="text-sm text-charcoal/60">{conversation.summary}</p>
         </div>
       )}
 
       <div className="mb-6 grid grid-cols-1 gap-6 md:grid-cols-2">
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <h2 className="mb-3 text-sm font-semibold">Messages</h2>
-          {messages.length === 0 && <p className="text-sm text-gray-500">No messages yet.</p>}
+        <div className="rounded-lg border border-sand bg-white p-4">
+          <h2 className="mb-3 text-sm font-semibold text-charcoal">Messages</h2>
+          {messages.length === 0 && <p className="text-sm text-charcoal/50">No messages yet.</p>}
           <div className="max-h-96 space-y-2 overflow-y-auto">
             {messages.map((message) => (
               <div key={message.id} className={message.direction === "inbound" ? "text-left" : "text-right"}>
                 <span
                   className={`inline-block max-w-[85%] rounded-lg px-3 py-1.5 text-sm ${
                     message.sender_type === "customer"
-                      ? "bg-gray-100 text-gray-900"
+                      ? "bg-sand/40 text-charcoal"
                       : message.sender_type === "ai"
-                        ? "bg-blue-100 text-blue-900"
-                        : "bg-purple-100 text-purple-900"
+                        ? "bg-primary/10 text-primary"
+                        : "bg-accent/10 text-accent"
                   }`}
                 >
-                  <span className="mr-1 text-xs font-medium uppercase text-gray-500">{message.sender_type}</span>
+                  <span className="mr-1 text-xs font-medium uppercase text-charcoal/40">{message.sender_type}</span>
                   {message.content_text ?? "(no text content)"}
                 </span>
               </div>
@@ -125,30 +117,30 @@ export default async function ConversationDetailPage({ params }: { params: Promi
           </div>
         </div>
 
-        <div className="rounded-lg border border-gray-200 bg-white p-4">
-          <h2 className="mb-3 text-sm font-semibold">AI decision trace (orchestration turns)</h2>
+        <div className="rounded-lg border border-sand bg-white p-4">
+          <h2 className="mb-3 text-sm font-semibold text-charcoal">AI decision trace (orchestration turns)</h2>
           {state?.last_intent && (
-            <p className="mb-3 text-xs text-gray-500">
+            <p className="mb-3 text-xs text-charcoal/50">
               Last detected intent: <span className="font-medium">{state.last_intent}</span>{" "}
               {state.last_intent_confidence !== null && `(${Math.round(state.last_intent_confidence * 100)}%)`}
             </p>
           )}
-          {turns.length === 0 && <p className="text-sm text-gray-500">No AI turns recorded yet.</p>}
+          {turns.length === 0 && <p className="text-sm text-charcoal/50">No AI turns recorded yet.</p>}
           <div className="max-h-96 space-y-3 overflow-y-auto">
             {turns.map((turn) => (
-              <div key={turn.id} className="border-b border-gray-100 pb-2 text-xs last:border-0">
+              <div key={turn.id} className="border-b border-sand/60 pb-2 text-xs last:border-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium text-gray-800">{turn.detected_intent ?? "unknown"}</span>
+                  <span className="font-medium text-charcoal">{turn.detected_intent ?? "unknown"}</span>
                   {turn.intent_confidence !== null && (
-                    <span className="text-gray-400">{Math.round(turn.intent_confidence * 100)}%</span>
+                    <span className="text-charcoal/40">{Math.round(turn.intent_confidence * 100)}%</span>
                   )}
                   {turn.handoff_required && <StatusBadge value="escalated" />}
                   {turn.tool_name && <StatusBadge value={turn.tool_status ?? "pending"} />}
                   {turn.error_code && <StatusBadge value="failed" />}
                 </div>
-                {turn.tool_name && <p className="mt-1 text-gray-500">tool: {turn.tool_name}</p>}
-                {turn.handoff_reason && <p className="mt-1 text-gray-500">handoff reason: {turn.handoff_reason}</p>}
-                <p className="mt-1 text-gray-400">
+                {turn.tool_name && <p className="mt-1 text-charcoal/50">tool: {turn.tool_name}</p>}
+                {turn.handoff_reason && <p className="mt-1 text-charcoal/50">handoff reason: {turn.handoff_reason}</p>}
+                <p className="mt-1 text-charcoal/40">
                   {turn.provider_used ? `${turn.provider_used}/${turn.model_used}` : "no LLM call"}
                   {turn.latency_ms !== null && ` · ${turn.latency_ms}ms`}
                   {" · "}
@@ -159,6 +151,6 @@ export default async function ConversationDetailPage({ params }: { params: Promi
           </div>
         </div>
       </div>
-    </main>
+    </div>
   );
 }

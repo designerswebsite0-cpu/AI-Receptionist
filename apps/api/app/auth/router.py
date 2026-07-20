@@ -101,6 +101,8 @@ async def me(user: User = Depends(get_current_user), db: AsyncSession = Depends(
         {
             "user_id": str(user.id),
             "email": user.email,
+            "full_name": user.full_name,
+            "avatar_url": user.avatar_url,
             "resort_configured": resort_settings is not None,
         }
     )

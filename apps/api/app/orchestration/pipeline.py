@@ -213,7 +213,9 @@ async def _record_inferences_background(
         async with AsyncSessionLocal() as db:
             customer = await get_customer(db, customer_id)
             if customer is not None:
-                await memory.record_inferences(db, customer=customer, entities=entities, conversation_id=conversation_id)
+                await memory.record_inferences(
+                    db, customer=customer, entities=entities, conversation_id=conversation_id
+                )
     except Exception:  # noqa: BLE001 - background best-effort; must never affect a turn already replied to
         logger.exception("Background customer-inference write failed for conversation %s", conversation_id)
 

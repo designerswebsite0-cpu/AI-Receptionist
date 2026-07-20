@@ -8,6 +8,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8
 const LoginBody = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  remember_session: z.boolean().optional().default(true),
 });
 
 export async function POST(request: NextRequest) {
@@ -22,7 +23,7 @@ export async function POST(request: NextRequest) {
   const upstream = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(parsed.data),
+    body: JSON.stringify({ email: parsed.data.email, password: parsed.data.password }),
   });
   const payload = await upstream.json();
   if (!upstream.ok || !payload.success) {
@@ -43,7 +44,10 @@ export async function POST(request: NextRequest) {
     secure: isProd,
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 24 * 30,
+    // "Remember this session" unchecked -> a browser-session cookie (no
+    // maxAge at all) that disappears when the browser closes, instead of
+    // persisting for 30 days.
+    ...(parsed.data.remember_session ? { maxAge: 60 * 60 * 24 * 30 } : {}),
   });
 
   return NextResponse.json({ success: true, data: { logged_in: true } });

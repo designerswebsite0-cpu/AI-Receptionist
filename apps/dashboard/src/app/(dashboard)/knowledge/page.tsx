@@ -1,8 +1,6 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { DashboardNav } from "@/components/dashboard-nav";
 import { StatusBadge } from "@/components/status-badge";
-import { fetchFromApi, getServerAccessToken } from "@/lib/server-api";
+import { fetchFromApi } from "@/lib/server-api";
 
 type SourceOut = {
   id: string;
@@ -25,9 +23,6 @@ export default async function KnowledgeSourcesPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  const token = await getServerAccessToken();
-  if (!token) redirect("/login");
-
   const params = await searchParams;
   const search = params.search ?? "";
   const visibility = params.visibility ?? "";
@@ -44,16 +39,23 @@ export default async function KnowledgeSourcesPage({
   const data: SourceListResponse = response.ok ? payload.data : { items: [], total: 0, offset: 0, limit: 50 };
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-10">
-      <DashboardNav />
+    <div className="mx-auto max-w-5xl">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Knowledge Sources</h1>
-        <Link
-          href="/knowledge/upload"
-          className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
-        >
-          Upload source
-        </Link>
+        <h1 className="text-lg font-semibold text-charcoal">Knowledge Base</h1>
+        <div className="flex gap-2 text-sm">
+          <Link href="/knowledge/website" className="rounded-md border border-sand px-4 py-2 font-medium text-charcoal hover:bg-sand/40">
+            Crawl website
+          </Link>
+          <Link href="/knowledge/search" className="rounded-md border border-sand px-4 py-2 font-medium text-charcoal hover:bg-sand/40">
+            Search playground
+          </Link>
+          <Link href="/knowledge/jobs" className="rounded-md border border-sand px-4 py-2 font-medium text-charcoal hover:bg-sand/40">
+            Ingestion jobs
+          </Link>
+          <Link href="/knowledge/upload" className="rounded-md bg-primary px-4 py-2 font-medium text-ivory hover:bg-primary-dark">
+            Upload source
+          </Link>
+        </div>
       </div>
 
       <form className="mb-4 flex gap-3 text-sm" method="GET">
@@ -62,9 +64,9 @@ export default async function KnowledgeSourcesPage({
           name="search"
           defaultValue={search}
           placeholder="Search title or source ID…"
-          className="w-64 rounded-md border border-gray-300 px-3 py-1.5"
+          className="w-64 rounded-md border border-sand px-3 py-1.5"
         />
-        <select name="visibility" defaultValue={visibility} className="rounded-md border border-gray-300 px-3 py-1.5">
+        <select name="visibility" defaultValue={visibility} className="rounded-md border border-sand px-3 py-1.5">
           <option value="">All visibility</option>
           <option value="guest">guest</option>
           <option value="staff">staff</option>
@@ -72,7 +74,7 @@ export default async function KnowledgeSourcesPage({
           <option value="archive">archive</option>
           <option value="template">template</option>
         </select>
-        <select name="status" defaultValue={status} className="rounded-md border border-gray-300 px-3 py-1.5">
+        <select name="status" defaultValue={status} className="rounded-md border border-sand px-3 py-1.5">
           <option value="">All statuses</option>
           <option value="draft">draft</option>
           <option value="active">active</option>
@@ -80,7 +82,7 @@ export default async function KnowledgeSourcesPage({
           <option value="archived">archived</option>
           <option value="rejected">rejected</option>
         </select>
-        <button type="submit" className="rounded-md border border-gray-300 px-3 py-1.5 hover:bg-gray-100">
+        <button type="submit" className="rounded-md border border-sand px-3 py-1.5 hover:bg-sand/40">
           Filter
         </button>
       </form>
@@ -90,13 +92,13 @@ export default async function KnowledgeSourcesPage({
       )}
 
       {response.ok && data.items.length === 0 && (
-        <p className="text-sm text-gray-500">No knowledge sources match these filters yet.</p>
+        <p className="text-sm text-charcoal/50">No knowledge sources match these filters yet.</p>
       )}
 
       {response.ok && data.items.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
+        <div className="overflow-x-auto rounded-lg border border-sand bg-white">
           <table className="w-full text-sm">
-            <thead className="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase text-gray-500">
+            <thead className="border-b border-sand bg-sand/20 text-left text-xs uppercase text-charcoal/50">
               <tr>
                 <th className="px-4 py-2">Title</th>
                 <th className="px-4 py-2">Visibility</th>
@@ -109,12 +111,12 @@ export default async function KnowledgeSourcesPage({
             </thead>
             <tbody>
               {data.items.map((source) => (
-                <tr key={source.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
+                <tr key={source.id} className="border-b border-sand/50 last:border-0 hover:bg-sand/10">
                   <td className="px-4 py-2">
-                    <Link href={`/knowledge/${source.id}`} className="font-medium text-gray-900 hover:underline">
+                    <Link href={`/knowledge/${source.id}`} className="font-medium text-charcoal hover:underline">
                       {source.title}
                     </Link>
-                    {source.source_id && <span className="ml-2 text-xs text-gray-400">{source.source_id}</span>}
+                    {source.source_id && <span className="ml-2 text-xs text-charcoal/40">{source.source_id}</span>}
                   </td>
                   <td className="px-4 py-2">
                     <StatusBadge value={source.visibility} />
@@ -140,10 +142,10 @@ export default async function KnowledgeSourcesPage({
       )}
 
       {response.ok && (
-        <p className="mt-3 text-xs text-gray-400">
+        <p className="mt-3 text-xs text-charcoal/40">
           Showing {data.items.length} of {data.total} sources
         </p>
       )}
-    </main>
+    </div>
   );
 }
