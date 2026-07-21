@@ -74,7 +74,13 @@ export async function middleware(request: NextRequest) {
   }
 
   const loginUrl = new URL("/login", request.url);
-  loginUrl.searchParams.set("reason", "expired");
+  // Only claim the session "expired" when there was actually a prior
+  // session (a refresh-token cookie that existed but failed to refresh) —
+  // a first-time visitor with no cookies at all never had a session to
+  // expire, and showing that banner to them is misleading.
+  if (refreshToken) {
+    loginUrl.searchParams.set("reason", "expired");
+  }
   return NextResponse.redirect(loginUrl);
 }
 
