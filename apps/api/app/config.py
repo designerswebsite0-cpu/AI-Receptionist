@@ -89,7 +89,13 @@ class Settings(BaseSettings):
     # tune them per deployment without a code change.
     webchat_enabled: bool = True
     webchat_allowed_origins: str = "http://localhost:3000"
-    webchat_session_ttl_seconds: int = 60 * 60 * 24 * 7  # 7 days
+    # 90 days rather than the original 7 — a guest researching a stay
+    # commonly returns days or weeks later; the session cookie (and thus
+    # "am I talking to the same returning guest") should comfortably
+    # outlive that gap. Contact-based dedup (app.webchat.service
+    # capture_contact) still covers the cross-device/cleared-cookie case
+    # on top of this.
+    webchat_session_ttl_seconds: int = 60 * 60 * 24 * 90  # 90 days
     webchat_max_message_length: int = 2000
     webchat_rate_limit_per_minute: int = 8  # messages, per session
     webchat_conversation_limit_per_ip_per_hour: int = 5  # new sessions, per IP

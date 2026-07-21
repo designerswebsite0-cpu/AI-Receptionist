@@ -6,12 +6,19 @@ most any caller ever sees of a real secret; the raw value never leaves
 app.config.Settings.
 """
 
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlparse
 
-from sqlalchemy import text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.models import AuditLog
 from app.config import get_settings
+from app.conversations.models import Conversation
+from app.knowledge.models import KnowledgeSource
+from app.notifications import repository as notifications_repository
+from app.orchestration.models import ServiceRequest
+from app.service_requests.constants import BOOKING_REQUEST_TYPE
 
 
 def _mask(value: str | None) -> str | None:
@@ -64,6 +71,79 @@ async def get_integrations_status(db: AsyncSession) -> dict:
     }
 
 
+async def _domain_signals(db: AsyncSession) -> dict:
+    """Real, per-domain operational counts — not a synthetic 'health score'.
+    Lets staff answer "is something wrong, and where" without grepping logs:
+    each number here is a direct, unaggregated count from the same tables
+    the rest of the dashboard reads."""
+    last_24h = datetime.now(UTC) - timedelta(hours=24)
+
+    kb_rows = (
+        await db.execute(
+            select(KnowledgeSource.processing_status, func.count()).group_by(KnowledgeSource.processing_status)
+        )
+    ).all()
+    kb_counts = dict(kb_rows)
+    kb_active = (
+        await db.execute(
+            select(func.count()).select_from(KnowledgeSource).where(KnowledgeSource.retrieval_enabled.is_(True))
+        )
+    ).scalar_one()
+
+    escalated = (
+        await db.execute(select(func.count()).select_from(Conversation).where(Conversation.status == "escalated"))
+    ).scalar_one()
+    # A conversation neither the AI nor a staff member currently owns —
+    # this should never happen if handoff/release always fire correctly,
+    # so a non-zero count here is itself a signal something upstream broke.
+    orphaned = (
+        await db.execute(
+            select(func.count())
+            .select_from(Conversation)
+            .where(
+                Conversation.ai_active.is_(False),
+                Conversation.human_active.is_(False),
+                Conversation.status != "closed",
+            )
+        )
+    ).scalar_one()
+
+    pending_bookings = (
+        await db.execute(
+            select(func.count())
+            .select_from(ServiceRequest)
+            .where(ServiceRequest.request_type == BOOKING_REQUEST_TYPE, ServiceRequest.status == "open")
+        )
+    ).scalar_one()
+
+    error_rows = (
+        await db.execute(
+            select(AuditLog.resource_type, func.count())
+            .where(AuditLog.created_at >= last_24h, AuditLog.action.ilike("%fail%"))
+            .group_by(AuditLog.resource_type)
+            .order_by(func.count().desc())
+        )
+    ).all()
+
+    unread_notifications = await notifications_repository.count_unread(db)
+
+    return {
+        "knowledge_base": {
+            "active_sources": kb_active,
+            "failed": kb_counts.get("failed", 0),
+            "needs_review": kb_counts.get("needs_review", 0),
+            "pending": kb_counts.get("pending", 0),
+        },
+        "conversations": {
+            "escalated_needing_attention": escalated,
+            "orphaned_not_handled_by_ai_or_staff": orphaned,
+        },
+        "bookings": {"pending_review": pending_bookings},
+        "notifications": {"unread": unread_notifications},
+        "recent_errors_24h": [{"area": area, "count": count} for area, count in error_rows],
+    }
+
+
 async def get_system_status(db: AsyncSession) -> dict:
     settings = get_settings()
     db_ok = await _database_reachable(db)
@@ -79,5 +159,6 @@ async def get_system_status(db: AsyncSession) -> dict:
     # missing LLM/Redis config is a real but non-fatal degradation, already
     # surfaced per-check above rather than folded into one boolean.
     overall = "healthy" if db_ok else "degraded"
+    domains = await _domain_signals(db) if db_ok else None
 
-    return {"overall": overall, "checks": checks}
+    return {"overall": overall, "checks": checks, "domains": domains}

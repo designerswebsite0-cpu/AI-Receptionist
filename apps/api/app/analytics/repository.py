@@ -6,9 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.conversations.models import Conversation
 from app.customers.models import Customer
 from app.feedback.models import CustomerFeedback
+from app.messages.models import Message
 from app.notifications import repository as notifications_repository
-from app.orchestration.models import ServiceRequest
+from app.orchestration.models import OrchestrationTurn, ServiceRequest
 from app.service_requests.constants import BOOKING_REQUEST_TYPE
+from app.users.models import User
 
 _NOT_CLOSED_STATUSES = (
     "open",
@@ -94,6 +96,72 @@ async def conversations_by_day(db: AsyncSession, *, start: datetime, end: dateti
         .where(Conversation.started_at >= start, Conversation.started_at <= end)
         .group_by(func.date(Conversation.started_at))
         .order_by(func.date(Conversation.started_at))
+    )
+    return result.all()
+
+
+async def conversations_by_status_in_range(db: AsyncSession, *, start: datetime, end: datetime) -> list[tuple]:
+    result = await db.execute(
+        select(Conversation.status, func.count())
+        .where(Conversation.started_at >= start, Conversation.started_at <= end)
+        .group_by(Conversation.status)
+    )
+    return result.all()
+
+
+async def conversations_by_channel_in_range(db: AsyncSession, *, start: datetime, end: datetime) -> list[tuple]:
+    result = await db.execute(
+        select(Conversation.channel, func.count())
+        .where(Conversation.started_at >= start, Conversation.started_at <= end)
+        .group_by(Conversation.channel)
+    )
+    return result.all()
+
+
+async def avg_messages_per_conversation_in_range(db: AsyncSession, *, start: datetime, end: datetime) -> float | None:
+    result = await db.execute(
+        select(func.count(Message.id), func.count(func.distinct(Message.conversation_id)))
+        .select_from(Message)
+        .join(Conversation, Conversation.id == Message.conversation_id)
+        .where(Conversation.started_at >= start, Conversation.started_at <= end)
+    )
+    message_count, conversation_count = result.one()
+    return (message_count / conversation_count) if conversation_count else None
+
+
+async def handoff_rate_in_range(db: AsyncSession, *, start: datetime, end: datetime) -> float | None:
+    """Fraction of conversations in range where at least one turn signaled
+    handoff_required — a real AI-performance signal (how often the AI
+    couldn't safely continue on its own), not a fabricated satisfaction
+    score."""
+    total = await count_conversations_in_range(db, start=start, end=end)
+    if not total:
+        return None
+    result = await db.execute(
+        select(func.count(func.distinct(OrchestrationTurn.conversation_id)))
+        .select_from(OrchestrationTurn)
+        .join(Conversation, Conversation.id == OrchestrationTurn.conversation_id)
+        .where(
+            Conversation.started_at >= start,
+            Conversation.started_at <= end,
+            OrchestrationTurn.handoff_required.is_(True),
+        )
+    )
+    handed_off = result.scalar_one()
+    return handed_off / total
+
+
+async def staff_workload(db: AsyncSession, *, limit: int = 10) -> list[tuple]:
+    """Current open-conversation count per staff member — a live
+    operational fact (who's carrying load right now), not range-scoped."""
+    result = await db.execute(
+        select(func.coalesce(User.full_name, User.email), func.count())
+        .select_from(Conversation)
+        .join(User, User.id == Conversation.assigned_agent_id)
+        .where(Conversation.status.in_(_NOT_CLOSED_STATUSES))
+        .group_by(User.id, User.full_name, User.email)
+        .order_by(func.count().desc())
+        .limit(limit)
     )
     return result.all()
 

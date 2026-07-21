@@ -14,6 +14,8 @@ class DashboardSummaryOut(BaseModel):
     feedback_total: int
     feedback_positive_rate: float | None
     unread_notifications: int
+    avg_messages_per_conversation: float | None
+    handoff_rate: float | None
 
 
 class DailyCountOut(BaseModel):
@@ -31,3 +33,6 @@ class DashboardAnalyticsOut(BaseModel):
     conversations_by_day: list[DailyCountOut]
     bookings_by_status: list[CategoryCountOut]
     feedback_by_rating: list[CategoryCountOut]
+    conversations_by_status: list[CategoryCountOut]
+    conversations_by_channel: list[CategoryCountOut]
+    staff_workload: list[CategoryCountOut]

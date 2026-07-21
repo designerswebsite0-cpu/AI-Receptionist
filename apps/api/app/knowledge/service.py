@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.service import record_audit_event
 from app.errors import ConflictError, NotFoundError, ValidationErrorApp
-from app.knowledge import repository, storage, validation
+from app.knowledge import malware, repository, storage, validation
 from app.knowledge.embeddings import EmbeddingProvider
 from app.knowledge.extraction.registry import extract
 from app.knowledge.indexing import index_source_version
@@ -248,6 +248,16 @@ async def reprocess_source(
     try:
         content = await storage.download_file(source.storage_path)
         validation_result = validation.validate_upload(source.original_filename or "reprocessed", content)
+
+        # Same fail-closed scan as the upload path (app/knowledge/malware.py)
+        # — reprocess is also a legitimate entry point for a source whose
+        # malware_scan_status was never resolved (e.g. sources ingested
+        # before the upload path started calling the scanner).
+        scan_result = await malware.ClamAVScanner().scan(content)
+        if scan_result.status == malware.ScanStatus.INFECTED:
+            raise ValidationErrorApp(f"File failed malware scan: {scan_result.detail or 'infected'}")
+        source.malware_scan_status = malware.resolve_scan_status(scan_result)
+
         extracted = extract(validation_result.file_format, content)
         result = await index_source_version(
             db, source=source, version=version, extracted=extracted, provider=embedding_provider

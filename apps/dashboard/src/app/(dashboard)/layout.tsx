@@ -19,7 +19,12 @@ type MeResponse = {
 /** The one place every dashboard route's auth check now lives — replaces
  * the `getServerAccessToken()` + redirect duplicated across every page. */
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const meResponse = await fetchFromApi("/api/v1/auth/me");
+  // 20s revalidation — see fetchFromApi's docstring. This is the one call
+  // that ran fresh on literally every navigation before the page's own
+  // data even started fetching; "who's logged in" doesn't need to be
+  // millisecond-fresh, so this alone removes a full sequential round-trip
+  // to the backend from most section-to-section navigation.
+  const meResponse = await fetchFromApi("/api/v1/auth/me", {}, { revalidateSeconds: 20 });
   if (meResponse.status === 401) {
     redirect("/login?reason=expired");
   }

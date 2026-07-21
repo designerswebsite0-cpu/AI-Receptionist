@@ -45,12 +45,21 @@ async def get_dashboard_analytics(
     booking_enquiries = await repository.count_booking_enquiries_in_range(db, start=range_start, end=range_end)
     up_count, down_count = await repository.feedback_counts_in_range(db, start=range_start, end=range_end)
     unread_notifications = await repository.count_unread_notifications(db)
+    avg_messages = await repository.avg_messages_per_conversation_in_range(db, start=range_start, end=range_end)
+    handoff_rate = await repository.handoff_rate_in_range(db, start=range_start, end=range_end)
 
     feedback_total = up_count + down_count
     positive_rate = (up_count / feedback_total) if feedback_total else None
 
     conversations_by_day_rows = await repository.conversations_by_day(db, start=range_start, end=range_end)
     bookings_by_status_rows = await repository.bookings_by_status_in_range(db, start=range_start, end=range_end)
+    conversations_by_status_rows = await repository.conversations_by_status_in_range(
+        db, start=range_start, end=range_end
+    )
+    conversations_by_channel_rows = await repository.conversations_by_channel_in_range(
+        db, start=range_start, end=range_end
+    )
+    staff_workload_rows = await repository.staff_workload(db)
 
     summary = DashboardSummaryOut(
         range_start=range_start,
@@ -63,6 +72,8 @@ async def get_dashboard_analytics(
         feedback_total=feedback_total,
         feedback_positive_rate=positive_rate,
         unread_notifications=unread_notifications,
+        avg_messages_per_conversation=avg_messages,
+        handoff_rate=handoff_rate,
     )
 
     return DashboardAnalyticsOut(
@@ -73,4 +84,9 @@ async def get_dashboard_analytics(
             CategoryCountOut(label="up", count=up_count),
             CategoryCountOut(label="down", count=down_count),
         ],
+        conversations_by_status=[CategoryCountOut(label=row[0], count=row[1]) for row in conversations_by_status_rows],
+        conversations_by_channel=[
+            CategoryCountOut(label=row[0], count=row[1]) for row in conversations_by_channel_rows
+        ],
+        staff_workload=[CategoryCountOut(label=row[0], count=row[1]) for row in staff_workload_rows],
     )

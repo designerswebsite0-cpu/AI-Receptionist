@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
 
-const POLL_INTERVAL_MS = 15000;
+const POLL_INTERVAL_MS = 8000;
 
 export function NotificationBell() {
   const [count, setCount] = useState(0);

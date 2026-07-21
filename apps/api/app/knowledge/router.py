@@ -8,8 +8,8 @@ from app.common.pagination import PageParams
 from app.common.responses import success
 from app.database import get_db
 from app.deps import get_current_user
-from app.errors import ConflictError, NotFoundError
-from app.knowledge import repository, service, storage, validation
+from app.errors import ConflictError, NotFoundError, ValidationErrorApp
+from app.knowledge import malware, repository, service, storage, validation
 from app.knowledge.embeddings import EmbeddingProvider, get_embedding_provider
 from app.knowledge.extraction.registry import extract
 from app.knowledge.indexing import index_source_version
@@ -64,6 +64,17 @@ async def upload_source(
     if existing is not None:
         raise ConflictError(f"An identical file already exists as source {existing.id}")
 
+    # Fail-closed malware scan (app/knowledge/malware.py) — was previously
+    # built but never called anywhere, leaving every upload's
+    # malware_scan_status stuck at its 'pending' default forever, which
+    # permanently blocked activate_source's governance check. An INFECTED
+    # result is rejected outright, before anything is stored; every other
+    # result is recorded honestly (never silently treated as 'clean').
+    scan_result = await malware.ClamAVScanner().scan(content)
+    if scan_result.status == malware.ScanStatus.INFECTED:
+        raise ValidationErrorApp(f"File failed malware scan: {scan_result.detail or 'infected'}")
+    resolved_scan_status = malware.resolve_scan_status(scan_result)
+
     body = SourceRegisterRequest(
         source_id=source_id,
         title=title,
@@ -75,6 +86,7 @@ async def upload_source(
         ocr_required=ocr_required,
     )
     source = await service.register_source(db, body=body, actor_user_id=user.id)
+    source.malware_scan_status = resolved_scan_status
 
     storage_path = f"sources/{source.id}/{validation_result.sanitized_filename}"
     await storage.upload_file(storage_path, content)

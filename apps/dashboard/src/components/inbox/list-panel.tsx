@@ -8,7 +8,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { cn } from "@/lib/cn";
 import type { ConversationOut } from "./types";
 
-const POLL_INTERVAL_MS = 8000;
+const POLL_INTERVAL_MS = 3000;
 
 interface Filters {
   status: string;

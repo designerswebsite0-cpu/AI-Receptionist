@@ -26,10 +26,15 @@ type DashboardAnalytics = {
     feedback_total: number;
     feedback_positive_rate: number | null;
     unread_notifications: number;
+    avg_messages_per_conversation: number | null;
+    handoff_rate: number | null;
   };
   conversations_by_day: { day: string; count: number }[];
   bookings_by_status: { label: string; count: number }[];
   feedback_by_rating: { label: string; count: number }[];
+  conversations_by_status: { label: string; count: number }[];
+  conversations_by_channel: { label: string; count: number }[];
+  staff_workload: { label: string; count: number }[];
 };
 
 const RANGES: { key: string; label: string }[] = [
@@ -94,6 +99,14 @@ export function DashboardOverview({ initialData }: { initialData: DashboardAnaly
         />
         <StatTile label="Feedback received" value={summary.feedback_total} />
         <StatTile label="Unread notifications" value={summary.unread_notifications} />
+        <StatTile
+          label="Avg messages / conversation"
+          value={summary.avg_messages_per_conversation != null ? summary.avg_messages_per_conversation.toFixed(1) : "—"}
+        />
+        <StatTile
+          label="Handoff rate"
+          value={summary.handoff_rate != null ? `${Math.round(summary.handoff_rate * 100)}%` : "—"}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -131,7 +144,7 @@ export function DashboardOverview({ initialData }: { initialData: DashboardAnaly
           )}
         </div>
 
-        <div className="rounded-lg border border-sand bg-white p-4 lg:col-span-2">
+        <div className="rounded-lg border border-sand bg-white p-4">
           <h2 className="mb-3 text-sm font-semibold text-charcoal">Feedback breakdown</h2>
           {summary.feedback_total === 0 ? (
             <p className="text-sm text-charcoal/40">No feedback received in this range.</p>
@@ -145,6 +158,58 @@ export function DashboardOverview({ initialData }: { initialData: DashboardAnaly
                 </Pie>
                 <Tooltip />
               </PieChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-sand bg-white p-4">
+          <h2 className="mb-3 text-sm font-semibold text-charcoal">Conversations by status</h2>
+          {data.conversations_by_status.length === 0 ? (
+            <p className="text-sm text-charcoal/40">No conversations in this range.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={data.conversations_by_status} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="#EAE5D9" />
+                <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+                <YAxis type="category" dataKey="label" tick={{ fontSize: 11 }} width={110} />
+                <Tooltip />
+                <Bar dataKey="count" fill="#1E3A2F" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-sand bg-white p-4">
+          <h2 className="mb-3 text-sm font-semibold text-charcoal">Conversations by channel</h2>
+          {data.conversations_by_channel.length === 0 ? (
+            <p className="text-sm text-charcoal/40">No conversations in this range.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart>
+                <Pie data={data.conversations_by_channel} dataKey="count" nameKey="label" innerRadius={40} outerRadius={70}>
+                  {data.conversations_by_channel.map((entry, i) => (
+                    <Cell key={entry.label} fill={["#1E3A2F", "#A3704C", "#C9A77C"][i % 3]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-sand bg-white p-4">
+          <h2 className="mb-3 text-sm font-semibold text-charcoal">Staff workload (open conversations)</h2>
+          {data.staff_workload.length === 0 ? (
+            <p className="text-sm text-charcoal/40">No conversations currently assigned to staff.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={data.staff_workload} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="#EAE5D9" />
+                <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+                <YAxis type="category" dataKey="label" tick={{ fontSize: 11 }} width={110} />
+                <Tooltip />
+                <Bar dataKey="count" fill="#A3704C" radius={[0, 4, 4, 0]} />
+              </BarChart>
             </ResponsiveContainer>
           )}
         </div>

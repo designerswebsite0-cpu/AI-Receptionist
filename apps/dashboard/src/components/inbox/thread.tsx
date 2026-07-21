@@ -5,7 +5,7 @@ import { Send, Loader2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import type { MessageOut } from "./types";
 
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 2000;
 
 const BUBBLE_STYLE: Record<MessageOut["sender_type"], string> = {
   customer: "bg-sand/50 text-charcoal self-start",
