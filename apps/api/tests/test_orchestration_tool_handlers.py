@@ -10,6 +10,7 @@ from datetime import date, timedelta
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bookings import repository as bookings_repository
 from app.bookings.models import RoomType
 from app.conversations import service as conversation_service
 from app.conversations.schemas import ConversationCreateRequest
@@ -64,6 +65,23 @@ async def test_check_room_availability_reports_remaining_units(db_session: Async
 
     assert result["available"] is True
     assert result["remaining_units"] == 2
+
+
+@pytest.mark.asyncio
+async def test_find_room_type_prefers_exact_match_over_ambiguous_substring(db_session: AsyncSession):
+    """2026-07-24 audit finding: 'pool villa' is a genuine substring of both
+    room names below — before this fix, .limit(1) with no ORDER BY could
+    silently resolve to either one depending on row order, a real risk of
+    booking the wrong room type."""
+    await _make_room_type(db_session, slug="honeymoon-pool-villa", name="Honeymoon Pool Villa")
+    await _make_room_type(db_session, slug="grand-pool-villa", name="Grand Two-Bedroom Pool Villa")
+
+    exact = await bookings_repository.find_room_type_by_name_or_slug(db_session, "Grand Two-Bedroom Pool Villa")
+    assert exact.name == "Grand Two-Bedroom Pool Villa"
+
+    ambiguous_first = await bookings_repository.find_room_type_by_name_or_slug(db_session, "pool villa")
+    ambiguous_second = await bookings_repository.find_room_type_by_name_or_slug(db_session, "pool villa")
+    assert ambiguous_first.id == ambiguous_second.id  # deterministic across repeated calls
 
 
 @pytest.mark.asyncio

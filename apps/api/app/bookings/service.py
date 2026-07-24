@@ -134,6 +134,12 @@ async def submit_booking_enquiry(
     if reasons:
         return BookingAttemptResult(created=False, reasons=reasons)
 
+    # Locks the room_type row for the rest of this transaction — closes the
+    # check-then-insert race where two guests booking the last unit(s)
+    # simultaneously could otherwise both pass the count check below before
+    # either commits (see repository.lock_room_type_for_booking's docstring).
+    await repository.lock_room_type_for_booking(db, room.id)
+
     overlapping = await repository.count_overlapping_bookings(
         db, room_type_id=room.id, check_in_date=parsed_check_in, check_out_date=parsed_check_out
     )
@@ -273,6 +279,14 @@ async def update_booking_details(
 
     if booking.check_out_date <= booking.check_in_date:
         raise ValidationErrorApp("Check-out date must be after check-in date")
+
+    if "num_guests" in updates and updates["num_guests"] is not None:
+        room = await repository.get_room_type(db, booking.room_type_id)
+        if room is not None and booking.num_guests > room.max_occupancy:
+            raise ValidationErrorApp(
+                f"{room.name} sleeps a maximum of {room.max_occupancy} guests per room — "
+                f"{booking.num_guests} doesn't fit in this one booking row."
+            )
 
     await db.commit()
     await db.refresh(booking)
