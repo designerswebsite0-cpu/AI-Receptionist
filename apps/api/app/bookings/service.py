@@ -25,6 +25,7 @@ from app.config import get_settings
 from app.errors import NotFoundError, ValidationErrorApp
 from app.logging import get_logger
 from app.notifications.service import notify
+from app.resort.service import resolve_local_today
 
 logger = get_logger(__name__)
 
@@ -71,7 +72,7 @@ async def submit_booking_enquiry(
 ) -> BookingAttemptResult:
     reasons: list[str] = []
     settings = get_settings()
-    today = date.today()
+    today = await resolve_local_today(db)
 
     parsed_check_in = _parse_date(check_in_date) if check_in_date else None
     parsed_check_out = _parse_date(check_out_date) if check_out_date else None
@@ -169,7 +170,7 @@ async def check_availability(
         return {"available": False, "reason": "Check-out date must be after check-in date."}
 
     settings = get_settings()
-    max_date = date.today() + timedelta(days=settings.booking_max_advance_days)
+    max_date = await resolve_local_today(db) + timedelta(days=settings.booking_max_advance_days)
     if parsed_check_in > max_date:
         return {
             "available": False,

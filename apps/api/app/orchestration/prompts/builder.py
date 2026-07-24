@@ -6,6 +6,8 @@ retrieved knowledge and the guest's own message are always clearly
 delimited as untrusted data, never blended into the system instructions.
 """
 
+from datetime import date
+
 from app.orchestration.context.assembler import AssembledContext
 from app.orchestration.domain import DetectedIntent, RetrievedContext
 from app.orchestration.llm.base import LLMMessage
@@ -15,10 +17,17 @@ _ASSISTANT_ROLES = {"ai", "human"}
 
 
 def build_system_prompt(
-    *, channel: str, language: str, intent: DetectedIntent, dialogue_state: str, flow_state: str | None
+    *,
+    channel: str,
+    language: str,
+    intent: DetectedIntent,
+    dialogue_state: str,
+    flow_state: str | None,
+    today: date,
 ) -> str:
     blocks = [
         templates.identity_block(),
+        templates.current_date_block(today),
         templates.grounding_rules_block(),
         templates.pricing_rules_block(),
         templates.booking_flow_rules_block(),
@@ -109,7 +118,9 @@ def build_guest_profile_block(guest_profile: dict) -> str:
     )
 
 
-def build_messages(*, context: AssembledContext, intent: DetectedIntent, channel: str) -> list[LLMMessage]:
+def build_messages(
+    *, context: AssembledContext, intent: DetectedIntent, channel: str, today: date | None = None
+) -> list[LLMMessage]:
     language = context.guest_profile.get("preferred_language", "en")
     system_prompt = build_system_prompt(
         channel=channel,
@@ -117,6 +128,7 @@ def build_messages(*, context: AssembledContext, intent: DetectedIntent, channel
         intent=intent,
         dialogue_state=context.dialogue_state,
         flow_state=context.flow_state,
+        today=today or date.today(),
     )
 
     messages = [LLMMessage(role="system", content=system_prompt)]

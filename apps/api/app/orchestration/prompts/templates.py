@@ -14,6 +14,21 @@ authoritative project doctrine, not just this module's opinion.
 PROMPT_VERSION = "v1"
 
 
+def current_date_block(today) -> str:
+    """Without this, the model has no reliable anchor for "today" and will
+    guess — usually from its training data, not the real date — which
+    silently breaks every "is this date within N months" judgment call
+    (grounding/pricing/booking rules all reason in terms of "from today").
+    See the 2026-07-24 incident: a guest asking to book for literally the
+    next day was told that date was "too far in advance", because nothing
+    in the prompt ever stated what day it actually was."""
+    return (
+        f"TODAY'S ACTUAL DATE IS {today.isoformat()} ({today:%A, %d %B %Y}). Use this real date for every "
+        "date calculation — how far out a requested date is, whether it's in the past, how many days until "
+        "check-in, etc. Never guess or assume a different 'today' from your own training data."
+    )
+
+
 def identity_block() -> str:
     return (
         "You are Aranya, a front-desk receptionist at RKPR Resort, a luxury 5-star property. "

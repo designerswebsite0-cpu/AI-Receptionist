@@ -15,12 +15,14 @@ from app.common.pagination import PageParams, build_page_meta
 from app.common.responses import success
 from app.config import Settings, get_settings
 from app.database import get_db
+from app.deps import get_current_user
 from app.errors import NotFoundError, ValidationErrorApp
 from app.knowledge.embeddings import EmbeddingProvider
 from app.knowledge.retrieval.reranker import Reranker
 from app.messages.schemas import MessageOut
 from app.orchestration.llm.base import LLMProvider
 from app.orchestration.providers import get_llm_provider, get_orchestration_embedding_provider, get_reranker
+from app.users.models import User
 from app.webchat import rate_limit, service
 from app.webchat.constants import SESSION_COOKIE_NAME
 from app.webchat.deps import get_webchat_session
@@ -215,3 +217,13 @@ async def capture_contact(
     # Deliberately generic — never reveals whether the phone/email already
     # belonged to an existing customer (brief §8).
     return success({"message": "Thank you — we've noted your contact details."})
+
+
+@router.post("/admin/sessions/clear")
+async def clear_all_sessions(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> dict:
+    """Staff-only, manual action (dashboard "Clear all sessions" button) —
+    never called automatically. Distinct from every route above: those
+    resolve identity from a guest's own session token, this requires real
+    staff auth."""
+    count = await service.clear_all_sessions(db, actor_user_id=user.id)
+    return success({"sessions_cleared": count})

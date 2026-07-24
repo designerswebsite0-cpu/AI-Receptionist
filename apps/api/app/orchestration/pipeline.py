@@ -54,6 +54,7 @@ from app.orchestration.prompts.builder import build_messages
 from app.orchestration.tools import handlers as tool_handlers
 from app.orchestration.tools.registry import to_openai_tools
 from app.orchestration.tools.validation import validate_tool_call
+from app.resort.service import resolve_local_today
 
 logger = logging.getLogger(__name__)
 
@@ -331,7 +332,8 @@ async def orchestrate(
     # entity extraction on its own only ever sees the current message.
     accumulated_entities = _merge_with_recent_entities(entities, recent_turns)
     missing_information = flow_engine.determine_missing_information(flow_state, accumulated_entities)
-    date_validation_issues = validate_stay_dates(accumulated_entities.values)
+    today = await resolve_local_today(db)
+    date_validation_issues = validate_stay_dates(accumulated_entities.values, today=today)
 
     assembled = await assemble_context(
         db,
@@ -358,7 +360,7 @@ async def orchestrate(
     else:
         max_response_tokens = get_settings().orchestration_max_response_tokens
         try:
-            prompt_messages = build_messages(context=assembled, intent=intent, channel=channel)
+            prompt_messages = build_messages(context=assembled, intent=intent, channel=channel, today=today)
             llm_result = await llm_provider.complete(
                 prompt_messages, tools=to_openai_tools(), max_tokens=max_response_tokens
             )

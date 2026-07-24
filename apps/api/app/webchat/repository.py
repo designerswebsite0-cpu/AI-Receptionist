@@ -3,7 +3,7 @@ import secrets
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.webchat.constants import TOKEN_BYTES
@@ -59,3 +59,17 @@ def touch(session: WebchatSession) -> None:
 
 def revoke(session: WebchatSession) -> None:
     session.revoked_at = datetime.now(UTC)
+
+
+async def revoke_all_active(db: AsyncSession) -> int:
+    """Staff-triggered bulk revoke (dashboard "Clear all sessions" button,
+    never automatic) — every guest with an existing session cookie starts
+    fresh next time they open the chat widget. Conversation/message history
+    is untouched; this only invalidates the token-to-identity mapping."""
+    now = datetime.now(UTC)
+    result = await db.execute(
+        update(WebchatSession)
+        .where(WebchatSession.revoked_at.is_(None))
+        .values(revoked_at=now)
+    )
+    return result.rowcount or 0

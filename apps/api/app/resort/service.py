@@ -1,4 +1,6 @@
 import uuid
+from datetime import date, datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,6 +9,25 @@ from app.errors import ConflictError, NotFoundError
 from app.resort import repository
 from app.resort.models import ResortSettings
 from app.resort.schemas import ResortSettingsCreateRequest, ResortSettingsUpdateRequest
+
+
+async def resolve_local_today(db: AsyncSession) -> date:
+    """The resort's own local date, not the server's — every "how far out
+    is this date" judgment (AI prompt reasoning, booking-window
+    enforcement) must agree on the same "today", and it must be the
+    resort's, not whatever timezone the server container happens to run
+    in. Falls back to a naive server-local date if resort_settings isn't
+    configured yet or its timezone string isn't a real IANA zone — a
+    missing/bad setting must never break a guest's turn (see the
+    2026-07-24 "tomorrow called too far in advance" incident this exists
+    to prevent)."""
+    settings_row = await repository.get_resort_settings(db)
+    if settings_row is None:
+        return date.today()
+    try:
+        return datetime.now(ZoneInfo(settings_row.timezone)).date()
+    except (ZoneInfoNotFoundError, ValueError):
+        return date.today()
 
 
 async def create_resort_settings(

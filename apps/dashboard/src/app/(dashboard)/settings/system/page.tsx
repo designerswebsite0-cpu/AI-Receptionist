@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
+import { ClearWebchatSessionsButton } from "@/components/settings/clear-webchat-sessions-button";
 import { StatusBadge } from "@/components/status-badge";
 import { fetchFromApi } from "@/lib/server-api";
 
@@ -123,9 +124,12 @@ export default async function SystemMonitoringPage() {
         </>
       )}
 
-      <p className="mt-3 text-xs text-charcoal/40">
+      <p className="mb-4 mt-3 text-xs text-charcoal/40">
         Aggregated status only — no stack traces, credentials, or environment variables are ever shown here.
       </p>
+
+      <h2 className="mb-2 text-sm font-semibold text-charcoal">Maintenance</h2>
+      <ClearWebchatSessionsButton />
     </div>
   );
 }

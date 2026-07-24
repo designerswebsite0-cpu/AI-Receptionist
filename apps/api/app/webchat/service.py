@@ -286,3 +286,19 @@ async def capture_contact(
 async def end_session(db: AsyncSession, *, session: WebchatSession) -> None:
     webchat_repository.revoke(session)
     await db.commit()
+
+
+async def clear_all_sessions(db: AsyncSession, *, actor_user_id: uuid.UUID) -> int:
+    """Staff-triggered only (dashboard button) — see
+    app.webchat.repository.revoke_all_active's own docstring for exactly
+    what this does and doesn't affect."""
+    count = await webchat_repository.revoke_all_active(db)
+    await record_audit_event(
+        db,
+        actor_user_id=actor_user_id,
+        action="webchat.all_sessions_cleared",
+        resource_type="webchat_session",
+        metadata={"sessions_revoked": count},
+    )
+    await db.commit()
+    return count
