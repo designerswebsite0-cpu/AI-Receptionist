@@ -94,6 +94,38 @@ async def test_create_room_booking_writes_pending_review_row_not_a_fake_confirma
 
 
 @pytest.mark.asyncio
+async def test_create_room_booking_splits_party_across_multiple_rooms_of_same_type(db_session: AsyncSession):
+    """2026-07-24 incident: 4 adults asking for 2 Honeymoon Pool Villas
+    (max_occupancy 2 each) was wrongly refused because num_rooms didn't
+    exist — the AI could only reason about a single room's capacity."""
+    customer, conversation = await _make_conversation(db_session)
+    await _make_room_type(db_session, max_occupancy=2, total_inventory=6)
+    check_in = (date.today() + timedelta(days=10)).isoformat()
+    check_out = (date.today() + timedelta(days=12)).isoformat()
+
+    result = await execute_tool(
+        db_session,
+        tool_name="create_room_booking",
+        tool_input={
+            "check_in_date": check_in,
+            "check_out_date": check_out,
+            "num_guests": 4,
+            "num_rooms": 2,
+            "room_type": "Garden Deluxe Room",
+            "guest_name": "Jane Guest",
+            "guest_phone": "+14155550100",
+        },
+        conversation_id=conversation.id,
+        customer_id=customer.id,
+        actor_user_id=None,
+    )
+
+    assert result["created"] is True
+    assert result["num_rooms_booked"] == 2
+    assert len(result["booking_ids"]) == 2
+
+
+@pytest.mark.asyncio
 async def test_create_room_booking_rejects_dates_beyond_six_month_window(db_session: AsyncSession):
     customer, conversation = await _make_conversation(db_session)
     await _make_room_type(db_session)

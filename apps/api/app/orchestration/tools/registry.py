@@ -107,6 +107,10 @@ register_tool(
                 "room_type": {"type": "string", "description": "Room category name, e.g. 'Garden Deluxe Room'"},
                 "check_in_date": {"type": "string", "description": "YYYY-MM-DD"},
                 "check_out_date": {"type": "string", "description": "YYYY-MM-DD"},
+                "num_rooms": {
+                    "type": "integer",
+                    "description": "How many rooms of this type, e.g. 2 — defaults to 1 if not given",
+                },
             },
             "required": ["room_type", "check_in_date", "check_out_date"],
         },
@@ -121,14 +125,18 @@ register_tool(
             "Submit a room booking for staff review — call this ONLY after checking availability, "
             "collecting every mandatory field, and reading all of them back to the guest for an "
             "explicit yes. Never confirms a reservation by itself; staff must review and confirm "
-            "in the dashboard before the guest is told the booking is final."
+            "in the dashboard before the guest is told the booking is final. If the party is booking "
+            "more than one room of the same type (e.g. 4 adults in 2 Honeymoon Pool Villas, 2 adults "
+            "each), pass num_rooms — this creates one linked booking per room in a single call, never "
+            "call this tool more than once for the same party's rooms."
         ),
         input_schema={
             "type": "object",
             "properties": {
                 "check_in_date": {"type": "string", "description": "YYYY-MM-DD"},
                 "check_out_date": {"type": "string", "description": "YYYY-MM-DD"},
-                "num_guests": {"type": "integer"},
+                "num_guests": {"type": "integer", "description": "Total guests across all rooms in this booking"},
+                "num_rooms": {"type": "integer", "description": "How many rooms of this type — defaults to 1"},
                 "room_type": {"type": "string"},
                 "breakfast_included": {"type": "boolean"},
                 "guest_name": {"type": "string"},

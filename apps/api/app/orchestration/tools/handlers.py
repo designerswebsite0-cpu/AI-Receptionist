@@ -51,6 +51,7 @@ async def _handle_check_room_availability(
         room_type=tool_input.get("room_type", ""),
         check_in_date=tool_input.get("check_in_date", ""),
         check_out_date=tool_input.get("check_out_date", ""),
+        num_rooms=tool_input.get("num_rooms"),
     )
 
 
@@ -87,6 +88,7 @@ async def _handle_create_room_booking(
         check_in_date=tool_input.get("check_in_date", ""),
         check_out_date=tool_input.get("check_out_date", ""),
         num_guests=tool_input.get("num_guests"),
+        num_rooms=tool_input.get("num_rooms"),
         room_type=tool_input.get("room_type", ""),
         guest_name=tool_input.get("guest_name", ""),
         guest_phone=tool_input.get("guest_phone", ""),
@@ -95,7 +97,12 @@ async def _handle_create_room_booking(
     )
     if not result.created:
         return {"created": False, "reasons": result.reasons}
-    return {"created": True, "booking_id": str(result.booking_id), "status": result.status}
+    return {
+        "created": True,
+        "booking_ids": [str(booking_id) for booking_id in result.booking_ids],
+        "num_rooms_booked": len(result.booking_ids),
+        "status": result.status,
+    }
 
 
 async def _handle_read_guest_profile(

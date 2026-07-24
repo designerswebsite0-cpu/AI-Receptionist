@@ -35,7 +35,7 @@ _PHONE_DIGITS_RE = re.compile(r"\d")
 @dataclass
 class BookingAttemptResult:
     created: bool
-    booking_id: uuid.UUID | None = None
+    booking_ids: list[uuid.UUID] = field(default_factory=list)
     status: str | None = None
     reasons: list[str] = field(default_factory=list)
 
@@ -67,6 +67,7 @@ async def submit_booking_enquiry(
     room_type: str,
     guest_name: str,
     guest_phone: str,
+    num_rooms: int | str | None = None,
     breakfast_included: bool | None = None,
     special_preferences: str | None = None,
 ) -> BookingAttemptResult:
@@ -94,6 +95,14 @@ async def submit_booking_enquiry(
         guests_int = None
         reasons.append(f"Number of guests '{num_guests}' isn't a valid number.")
 
+    try:
+        rooms_int = int(num_rooms) if num_rooms not in (None, "") else 1
+        if rooms_int < 1:
+            reasons.append("Number of rooms must be at least 1.")
+    except (TypeError, ValueError):
+        rooms_int = None
+        reasons.append(f"Number of rooms '{num_rooms}' isn't a valid number.")
+
     room = await repository.find_room_type_by_name_or_slug(db, room_type) if room_type else None
     if room is None:
         reasons.append(f"'{room_type}' doesn't match any current room category — ask the guest to pick a listed one.")
@@ -110,8 +119,17 @@ async def submit_booking_enquiry(
                 f"we can only take bookings up to {max_date.isoformat()} for now."
             )
 
-    if room is not None and guests_int is not None and guests_int > room.max_occupancy:
-        reasons.append(f"{room.name} sleeps a maximum of {room.max_occupancy} guests.")
+    # Occupancy is PER ROOM — a party larger than one room's max_occupancy
+    # isn't rejected outright, it's checked against max_occupancy * num_rooms
+    # instead (e.g. 4 adults across 2 Honeymoon Pool Villas, max_occupancy 2
+    # each, fits fine split 2-and-2 — see the 2026-07-24 incident where the
+    # AI wrongly refused exactly this because num_rooms didn't exist yet).
+    if room is not None and guests_int is not None and rooms_int is not None:
+        if guests_int > room.max_occupancy * rooms_int:
+            reasons.append(
+                f"{room.name} sleeps a maximum of {room.max_occupancy} guests per room — "
+                f"{rooms_int} room(s) can't fit {guests_int} guests. Offer more rooms or a larger room type."
+            )
 
     if reasons:
         return BookingAttemptResult(created=False, reasons=reasons)
@@ -119,43 +137,67 @@ async def submit_booking_enquiry(
     overlapping = await repository.count_overlapping_bookings(
         db, room_type_id=room.id, check_in_date=parsed_check_in, check_out_date=parsed_check_out
     )
-    if overlapping >= room.total_inventory:
+    if overlapping + rooms_int > room.total_inventory:
+        remaining = max(room.total_inventory - overlapping, 0)
         return BookingAttemptResult(
             created=False,
-            reasons=[f"No {room.name} rooms are available for those dates — every unit is already held."],
+            reasons=[
+                f"Only {remaining} {room.name} room(s) are available for those dates — "
+                f"{rooms_int} were requested."
+            ],
         )
 
-    booking = RoomBooking(
-        conversation_id=conversation_id,
-        customer_id=customer_id,
-        room_type_id=room.id,
-        check_in_date=parsed_check_in,
-        check_out_date=parsed_check_out,
-        num_guests=guests_int,
-        breakfast_included=breakfast_included if breakfast_included is not None else room.breakfast_included_default,
-        guest_name=guest_name.strip(),
-        guest_phone=guest_phone.strip(),
-        special_preferences=special_preferences,
-        status="pending_review",
-    )
-    booking = await repository.create_room_booking(db, booking=booking)
-    await db.commit()
-    await db.refresh(booking)
+    # Split guests as evenly as possible across the requested rooms (e.g.
+    # 4 guests / 2 rooms -> 2 and 2; 5 / 2 -> 3 and 2) — each room still
+    # respects its own max_occupancy, already validated above.
+    base_guests = guests_int // rooms_int
+    remainder = guests_int % rooms_int
 
+    booking_ids: list[uuid.UUID] = []
+    for room_index in range(rooms_int):
+        room_guests = base_guests + (1 if room_index < remainder else 0)
+        note = special_preferences or ""
+        if rooms_int > 1:
+            group_note = f"Room {room_index + 1} of {rooms_int}, booked together for one party of {guests_int}."
+            note = f"{group_note} {note}".strip()
+
+        booking = RoomBooking(
+            conversation_id=conversation_id,
+            customer_id=customer_id,
+            room_type_id=room.id,
+            check_in_date=parsed_check_in,
+            check_out_date=parsed_check_out,
+            num_guests=room_guests,
+            breakfast_included=(
+                breakfast_included if breakfast_included is not None else room.breakfast_included_default
+            ),
+            guest_name=guest_name.strip(),
+            guest_phone=guest_phone.strip(),
+            special_preferences=note or None,
+            status="pending_review",
+        )
+        booking = await repository.create_room_booking(db, booking=booking)
+        booking_ids.append(booking.id)
+
+    await db.commit()
+
+    body = f"{room.name}, {parsed_check_in.isoformat()} to {parsed_check_out.isoformat()} — {guest_name.strip()}"
+    if rooms_int > 1:
+        body = f"{rooms_int}x {body}"
     await notify(
         db,
         notification_type="room_booking_received",
         title="New room booking to review",
-        body=f"{room.name}, {parsed_check_in.isoformat()} to {parsed_check_out.isoformat()} — {guest_name.strip()}",
+        body=body,
         resource_type="room_booking",
-        resource_id=str(booking.id),
+        resource_id=str(booking_ids[0]),
     )
 
-    return BookingAttemptResult(created=True, booking_id=booking.id, status=booking.status)
+    return BookingAttemptResult(created=True, booking_ids=booking_ids, status="pending_review")
 
 
 async def check_availability(
-    db: AsyncSession, *, room_type: str, check_in_date: str, check_out_date: str
+    db: AsyncSession, *, room_type: str, check_in_date: str, check_out_date: str, num_rooms: int | str | None = None
 ) -> dict:
     parsed_check_in = _parse_date(check_in_date)
     parsed_check_out = _parse_date(check_out_date)
@@ -168,6 +210,13 @@ async def check_availability(
 
     if parsed_check_out <= parsed_check_in:
         return {"available": False, "reason": "Check-out date must be after check-in date."}
+
+    try:
+        rooms_int = int(num_rooms) if num_rooms not in (None, "") else 1
+        if rooms_int < 1:
+            rooms_int = 1
+    except (TypeError, ValueError):
+        rooms_int = 1
 
     settings = get_settings()
     max_date = await resolve_local_today(db) + timedelta(days=settings.booking_max_advance_days)
@@ -183,12 +232,14 @@ async def check_availability(
     overlapping = await repository.count_overlapping_bookings(
         db, room_type_id=room.id, check_in_date=parsed_check_in, check_out_date=parsed_check_out
     )
-    remaining = room.total_inventory - overlapping
+    remaining = max(room.total_inventory - overlapping, 0)
     return {
-        "available": remaining > 0,
+        "available": remaining >= rooms_int,
         "room_type": room.name,
-        "remaining_units": max(remaining, 0),
-        "max_occupancy": room.max_occupancy,
+        "rooms_requested": rooms_int,
+        "remaining_units": remaining,
+        "max_occupancy_per_room": room.max_occupancy,
+        "max_total_guests_for_requested_rooms": room.max_occupancy * rooms_int,
         "breakfast_included_default": room.breakfast_included_default,
     }
 
