@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PaymentsPanel } from "@/components/bookings/payments-panel";
 import { RoomBookingReviewPanel } from "@/components/bookings/room-booking-review-panel";
 import { StatusBadge } from "@/components/status-badge";
 import { fetchFromApi } from "@/lib/server-api";
@@ -6,6 +7,7 @@ import { fetchFromApi } from "@/lib/server-api";
 type RoomBooking = {
   id: string;
   conversation_id: string | null;
+  customer_id: string;
   customer_name: string | null;
   room_type_name: string | null;
   check_in_date: string;
@@ -101,7 +103,7 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
         )}
       </div>
 
-      <div className="rounded-lg border border-sand bg-white p-4">
+      <div className="mb-6 rounded-lg border border-sand bg-white p-4">
         <h2 className="mb-3 text-sm font-semibold text-charcoal">Staff review</h2>
         <RoomBookingReviewPanel
           bookingId={booking.id}
@@ -116,6 +118,8 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           staffNotes={booking.staff_notes}
         />
       </div>
+
+      <PaymentsPanel roomBookingId={booking.id} customerId={booking.customer_id} />
     </div>
   );
 }

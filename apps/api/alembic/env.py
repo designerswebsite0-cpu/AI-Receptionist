@@ -29,6 +29,7 @@ from app.knowledge.models import (  # noqa: E402,F401
 )
 from app.messages.models import Message, MessageAttachment  # noqa: E402,F401
 from app.orchestration.models import OrchestrationTurn, ServiceRequest  # noqa: E402,F401
+from app.payments.models import Payment  # noqa: E402,F401
 from app.resort.models import ResortSettings  # noqa: E402,F401
 from app.users.models import User  # noqa: E402,F401
 from app.webchat.models import WebchatSession  # noqa: E402,F401

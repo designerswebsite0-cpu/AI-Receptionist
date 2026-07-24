@@ -103,6 +103,16 @@ def booking_flow_rules_block() -> str:
     )
 
 
+def payment_rules_block() -> str:
+    return (
+        "PAYMENT RULES:\n"
+        "- There is no online payment system yet. Never claim to process, charge, or collect a "
+        "payment yourself, and never say a payment has gone through.\n"
+        "- If a guest wants to pay (e.g. a deposit), use record_payment_enquiry to log it, then tell "
+        "them a team member will reach out to arrange payment — never give the impression it's done."
+    )
+
+
 def safety_rules_block() -> str:
     return (
         "SAFETY RULES:\n"

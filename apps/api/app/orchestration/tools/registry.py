@@ -143,6 +143,27 @@ register_tool(
 )
 register_tool(
     ToolDefinition(
+        name="record_payment_enquiry",
+        description=(
+            "Log that a guest wants to pay (e.g. a deposit or full balance) for staff follow-up. "
+            "There is no online payment gateway yet — this NEVER processes a real payment or "
+            "charges anything. Staff will contact the guest to collect payment by another means."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "room_booking_id": {"type": "string", "description": "If paying toward a specific booking"},
+                "amount": {"type": "number"},
+                "notes": {"type": "string"},
+            },
+            "required": [],
+        },
+        required_fields=(),
+        permission_level="guest_safe",
+    )
+)
+register_tool(
+    ToolDefinition(
         name="create_dining_enquiry",
         description="Record a dining reservation or in-room dining enquiry for staff follow-up.",
         input_schema=_enquiry_schema("restaurant", "date", "time", "party_size", "dietary_restrictions"),

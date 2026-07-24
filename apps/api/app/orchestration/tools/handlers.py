@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.bookings import service as bookings_service
 from app.customers.service import get_customer_or_404
 from app.orchestration import repository, service
+from app.payments import service as payments_service
 
 _ENQUIRY_REQUEST_TYPES = {
     "create_dining_enquiry": "dining_enquiry",
@@ -51,6 +52,28 @@ async def _handle_check_room_availability(
         check_in_date=tool_input.get("check_in_date", ""),
         check_out_date=tool_input.get("check_out_date", ""),
     )
+
+
+async def _handle_record_payment_enquiry(
+    db: AsyncSession, *, tool_input: dict, conversation_id: uuid.UUID, customer_id: uuid.UUID,
+    actor_user_id: uuid.UUID | None,
+) -> dict:
+    raw_booking_id = tool_input.get("room_booking_id")
+    booking_id = None
+    if raw_booking_id:
+        try:
+            booking_id = uuid.UUID(raw_booking_id)
+        except (ValueError, TypeError):
+            booking_id = None
+    payment = await payments_service.record_payment_enquiry(
+        db,
+        conversation_id=conversation_id,
+        customer_id=customer_id,
+        room_booking_id=booking_id,
+        amount=tool_input.get("amount"),
+        notes=tool_input.get("notes"),
+    )
+    return {"payment_id": str(payment.id), "status": payment.status}
 
 
 async def _handle_create_room_booking(
@@ -178,6 +201,7 @@ async def execute_tool(
         "retrieve_request_status": _handle_retrieve_request_status,
         "check_room_availability": _handle_check_room_availability,
         "create_room_booking": _handle_create_room_booking,
+        "record_payment_enquiry": _handle_record_payment_enquiry,
     }.get(tool_name)
 
     if handler is None:

@@ -20,6 +20,7 @@ from app.logging import configure_logging, get_logger
 from app.middleware import RequestContextMiddleware
 from app.notifications.router import router as notifications_router
 from app.orchestration.router import router as orchestration_router
+from app.payments.router import router as payments_router
 from app.resort.router import router as resort_router
 from app.users.router import router as users_router
 from app.webchat.router import router as webchat_router
@@ -75,5 +76,6 @@ app.include_router(users_router)
 app.include_router(bookings_router)
 app.include_router(room_types_router)
 app.include_router(notifications_router)
+app.include_router(payments_router)
 app.include_router(feedback_router)
 app.include_router(webchat_router)
