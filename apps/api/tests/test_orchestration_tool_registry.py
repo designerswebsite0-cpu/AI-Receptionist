@@ -53,15 +53,24 @@ def test_validate_unknown_tool_is_denied():
 
 
 def test_validate_missing_required_field_is_denied():
-    call = LLMToolCall(call_id="call_1", tool_name="create_booking_enquiry", arguments={})
+    call = LLMToolCall(call_id="call_1", tool_name="create_room_booking", arguments={"check_in_date": "2026-08-01"})
     decision = validate_tool_call(call)
     assert decision.decision == "denied"
-    assert "check_in_date" in decision.denial_reason
+    assert "guest_phone" in decision.denial_reason
 
 
 def test_validate_complete_call_is_approved_for_execution():
     call = LLMToolCall(
-        call_id="call_1", tool_name="create_booking_enquiry", arguments={"check_in_date": "15 July 2026"}
+        call_id="call_1",
+        tool_name="create_room_booking",
+        arguments={
+            "check_in_date": "2026-08-01",
+            "check_out_date": "2026-08-03",
+            "num_guests": 2,
+            "room_type": "Garden Deluxe Room",
+            "guest_name": "Jane Guest",
+            "guest_phone": "+14155550100",
+        },
     )
     decision = validate_tool_call(call)
     assert decision.decision == "execute"

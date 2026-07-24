@@ -18,7 +18,7 @@ def test_dialogue_states_are_channel_neutral_and_match_functions_md():
 
 
 def test_channels_are_current_phase_only():
-    assert set(CHANNELS) == {"whatsapp", "webchat"}
+    assert set(CHANNELS) == {"whatsapp", "webchat", "voice"}
 
 
 def test_priorities_are_ordered_low_to_urgent():
