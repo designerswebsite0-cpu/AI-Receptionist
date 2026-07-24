@@ -32,6 +32,7 @@ from app.orchestration.models import OrchestrationTurn, ServiceRequest  # noqa: 
 from app.payments.models import Payment  # noqa: E402,F401
 from app.resort.models import ResortSettings  # noqa: E402,F401
 from app.users.models import User  # noqa: E402,F401
+from app.voice.models import VoiceCall  # noqa: E402,F401
 from app.webchat.models import WebchatSession  # noqa: E402,F401
 
 config = context.config

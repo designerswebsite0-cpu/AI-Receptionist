@@ -120,6 +120,41 @@ class Settings(BaseSettings):
     # booking-rooms brief.
     booking_max_advance_days: int = 183
 
+    # Phase 9: Global Voice Call System (inbound only). No production
+    # credentials exist yet for any of these — every field is optional and
+    # every voice code path must degrade gracefully (never crash app
+    # startup, never break other channels) when unset. See
+    # docs/phase-9/ENVIRONMENT.md for what each value is and where to get
+    # it once real accounts exist.
+    voice_enabled: bool = False
+    # A separate field from twilio_from_number (Phase 7 SMS) — voice and SMS
+    # may end up on different Twilio numbers, and conflating them would make
+    # it impossible to reason about which number does what.
+    twilio_phone_number: str | None = None
+
+    livekit_url: str | None = None
+    livekit_api_key: str | None = None
+    livekit_api_secret: str | None = None
+
+    deepgram_api_key: str | None = None
+
+    elevenlabs_api_key: str | None = None
+    elevenlabs_voice_id: str | None = None
+
+    # Voice-specific LLM ordering is the REVERSE of webchat's (architecture.md
+    # §4.4 has OpenAI primary / Groq fallback for text channels) — the
+    # Phase 9 brief explicitly specifies Groq primary / OpenAI 4o-mini
+    # fallback for voice, presumably for Groq's lower inference latency,
+    # which matters far more for a live phone call than for chat. Reuses
+    # the same groq_api_key/groq_model/openai_api_key/openai_model settings
+    # above; this is purely an ordering flag read by app.voice.agent.
+    voice_primary_provider: str = "groq"
+
+    # Safety caps — never let a single call, or a stuck agent, run forever
+    # even if a provider hangs instead of erroring.
+    voice_max_call_duration_seconds: int = 60 * 30  # 30 minutes
+    voice_silence_timeout_seconds: int = 30
+
     @field_validator("database_url")
     @classmethod
     def _require_asyncpg_driver(cls, value: str) -> str:

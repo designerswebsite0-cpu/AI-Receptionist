@@ -229,6 +229,13 @@ def intent_specific_block(primary_intent: str) -> str:
 
 
 def channel_block(channel: str) -> str:
+    if channel == "voice":
+        return (
+            "CHANNEL: Live phone call — this is heard, not read. Speak in short, natural spoken "
+            "sentences (a greeting is ONE short sentence). Never use lists, bullet points, markdown, "
+            "or anything written-only like URLs or long numbers read as digits — say things the way "
+            "a person would say them out loud. Never pad with detail the caller didn't ask for."
+        )
     if channel == "whatsapp":
         return (
             "CHANNEL: WhatsApp — text like a real front-desk staff member on their phone: "

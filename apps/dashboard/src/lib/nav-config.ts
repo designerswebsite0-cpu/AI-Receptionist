@@ -8,6 +8,7 @@ import {
   Bell,
   MessageSquareHeart,
   Settings,
+  Phone,
   type LucideIcon,
 } from "lucide-react";
 
@@ -26,6 +27,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/knowledge", label: "Knowledge Base", icon: BookOpen },
   { href: "/staff", label: "Staff Management", icon: UserCog },
   { href: "/bookings", label: "Booking Management", icon: CalendarCheck },
+  { href: "/voice-calls", label: "Voice Calls", icon: Phone },
   { href: "/notifications", label: "Notifications", icon: Bell },
   { href: "/feedback", label: "Customer Feedback", icon: MessageSquareHeart },
   { href: "/settings", label: "Settings", icon: Settings },

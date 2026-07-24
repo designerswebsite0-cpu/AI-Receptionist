@@ -10,7 +10,7 @@ distinct (see docs/product_decisions.md 2026-07-16 entry):
   to send (that's STATUS + the ai_active/human_active flags).
 """
 
-CHANNELS = ("whatsapp", "webchat")
+CHANNELS = ("whatsapp", "webchat", "voice")
 
 # 7 statuses from the Phase 2 brief, plus BLOCKED retained from the
 # original architecture.md §4.1 conversation states for safety-critical
