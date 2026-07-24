@@ -1,12 +1,16 @@
 """Integration tests for tool execution — requires a reachable Postgres
 (see conftest.db_engine); skips cleanly when none is available. Confirms
-every create_*_enquiry tool writes a service_requests row rather than
-claiming any operation completed.
+every create_*_enquiry tool writes a service_requests row, and
+create_room_booking writes a room_bookings row, rather than claiming any
+operation completed.
 """
+
+from datetime import date, timedelta
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bookings.models import RoomType
 from app.conversations import service as conversation_service
 from app.conversations.schemas import ConversationCreateRequest
 from app.customers import service as customer_service
@@ -25,26 +29,126 @@ async def _make_conversation(db: AsyncSession):
     return customer, conversation
 
 
+async def _make_room_type(db: AsyncSession, **overrides) -> RoomType:
+    room_type = RoomType(
+        slug=overrides.get("slug", "garden-deluxe-room"),
+        name=overrides.get("name", "Garden Deluxe Room"),
+        total_inventory=overrides.get("total_inventory", 2),
+        max_occupancy=overrides.get("max_occupancy", 3),
+        adults_allowed=overrides.get("adults_allowed", 2),
+        children_allowed=overrides.get("children_allowed", 1),
+        low_season_rate=9500,
+        high_season_rate=12500,
+    )
+    db.add(room_type)
+    await db.commit()
+    await db.refresh(room_type)
+    return room_type
+
+
 @pytest.mark.asyncio
-async def test_create_booking_enquiry_writes_service_request_not_a_fake_booking(db_session: AsyncSession):
+async def test_check_room_availability_reports_remaining_units(db_session: AsyncSession):
     customer, conversation = await _make_conversation(db_session)
+    await _make_room_type(db_session, total_inventory=2)
+    check_in = (date.today() + timedelta(days=10)).isoformat()
+    check_out = (date.today() + timedelta(days=12)).isoformat()
 
     result = await execute_tool(
         db_session,
-        tool_name="create_booking_enquiry",
-        tool_input={"check_in_date": "15 July 2026", "adults": 2},
+        tool_name="check_room_availability",
+        tool_input={"room_type": "Garden Deluxe Room", "check_in_date": check_in, "check_out_date": check_out},
         conversation_id=conversation.id,
         customer_id=customer.id,
         actor_user_id=None,
     )
 
-    assert result["status"] == "open"  # never "confirmed" or "booked"
-    assert result["request_type"] == "booking_enquiry"
+    assert result["available"] is True
+    assert result["remaining_units"] == 2
 
-    requests = await repository.list_service_requests_for_conversation(db_session, conversation.id)
-    assert len(requests) == 1
-    assert requests[0].details["check_in_date"] == "15 July 2026"
-    assert requests[0].created_by == "ai"
+
+@pytest.mark.asyncio
+async def test_create_room_booking_writes_pending_review_row_not_a_fake_confirmation(db_session: AsyncSession):
+    customer, conversation = await _make_conversation(db_session)
+    await _make_room_type(db_session)
+    check_in = (date.today() + timedelta(days=10)).isoformat()
+    check_out = (date.today() + timedelta(days=12)).isoformat()
+
+    result = await execute_tool(
+        db_session,
+        tool_name="create_room_booking",
+        tool_input={
+            "check_in_date": check_in,
+            "check_out_date": check_out,
+            "num_guests": 2,
+            "room_type": "Garden Deluxe Room",
+            "guest_name": "Jane Guest",
+            "guest_phone": "+14155550100",
+        },
+        conversation_id=conversation.id,
+        customer_id=customer.id,
+        actor_user_id=None,
+    )
+
+    assert result["created"] is True
+    assert result["status"] == "pending_review"  # never "confirmed" or "booked"
+
+
+@pytest.mark.asyncio
+async def test_create_room_booking_rejects_dates_beyond_six_month_window(db_session: AsyncSession):
+    customer, conversation = await _make_conversation(db_session)
+    await _make_room_type(db_session)
+    check_in = (date.today() + timedelta(days=400)).isoformat()
+    check_out = (date.today() + timedelta(days=402)).isoformat()
+
+    result = await execute_tool(
+        db_session,
+        tool_name="create_room_booking",
+        tool_input={
+            "check_in_date": check_in,
+            "check_out_date": check_out,
+            "num_guests": 2,
+            "room_type": "Garden Deluxe Room",
+            "guest_name": "Jane Guest",
+            "guest_phone": "+14155550100",
+        },
+        conversation_id=conversation.id,
+        customer_id=customer.id,
+        actor_user_id=None,
+    )
+
+    assert result["created"] is False
+    assert any("6 months" in r or "days out" in r for r in result["reasons"])
+
+
+@pytest.mark.asyncio
+async def test_create_room_booking_rejects_when_inventory_exhausted(db_session: AsyncSession):
+    customer, conversation = await _make_conversation(db_session)
+    await _make_room_type(db_session, total_inventory=1)
+    check_in = (date.today() + timedelta(days=10)).isoformat()
+    check_out = (date.today() + timedelta(days=12)).isoformat()
+
+    async def _book():
+        return await execute_tool(
+            db_session,
+            tool_name="create_room_booking",
+            tool_input={
+                "check_in_date": check_in,
+                "check_out_date": check_out,
+                "num_guests": 2,
+                "room_type": "Garden Deluxe Room",
+                "guest_name": "Jane Guest",
+                "guest_phone": "+14155550100",
+            },
+            conversation_id=conversation.id,
+            customer_id=customer.id,
+            actor_user_id=None,
+        )
+
+    first = await _book()
+    second = await _book()
+
+    assert first["created"] is True
+    assert second["created"] is False
 
 
 @pytest.mark.asyncio

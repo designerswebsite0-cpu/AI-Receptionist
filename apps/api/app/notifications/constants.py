@@ -12,4 +12,5 @@ NOTIFICATION_TYPES = (
     "booking_enquiry_received",
     "knowledge_ingestion_failed",
     "feedback_received",
+    "room_booking_received",
 )

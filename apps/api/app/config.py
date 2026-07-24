@@ -107,6 +107,19 @@ class Settings(BaseSettings):
     langfuse_public_key: str | None = None
     langfuse_secret_key: str | None = None
 
+    # Phase 7: Room Booking — SMS confirmation. All three must be set for a
+    # real send; when any is missing, app.bookings.sms logs and marks the
+    # booking's confirmation_sms_status "skipped_not_configured" instead of
+    # raising, since staff must still be able to confirm a booking in the
+    # dashboard even before Twilio is fully provisioned.
+    twilio_account_sid: str | None = None
+    twilio_auth_token: str | None = None
+    twilio_from_number: str | None = None
+    # Rolling window, not calendar-year-bound (a guest in December asking
+    # about next January must still be within range) — see the 2026-07-24
+    # booking-rooms brief.
+    booking_max_advance_days: int = 183
+
     @field_validator("database_url")
     @classmethod
     def _require_asyncpg_driver(cls, value: str) -> str:

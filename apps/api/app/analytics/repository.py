@@ -3,13 +3,13 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bookings.models import RoomBooking
 from app.conversations.models import Conversation
 from app.customers.models import Customer
 from app.feedback.models import CustomerFeedback
 from app.messages.models import Message
 from app.notifications import repository as notifications_repository
-from app.orchestration.models import OrchestrationTurn, ServiceRequest
-from app.service_requests.constants import BOOKING_REQUEST_TYPE
+from app.orchestration.models import OrchestrationTurn
 from app.users.models import User
 
 _NOT_CLOSED_STATUSES = (
@@ -59,12 +59,8 @@ async def count_new_customers_in_range(db: AsyncSession, *, start: datetime, end
 async def count_booking_enquiries_in_range(db: AsyncSession, *, start: datetime, end: datetime) -> int:
     result = await db.execute(
         select(func.count())
-        .select_from(ServiceRequest)
-        .where(
-            ServiceRequest.request_type == BOOKING_REQUEST_TYPE,
-            ServiceRequest.created_at >= start,
-            ServiceRequest.created_at <= end,
-        )
+        .select_from(RoomBooking)
+        .where(RoomBooking.created_at >= start, RoomBooking.created_at <= end)
     )
     return result.scalar_one()
 
@@ -167,14 +163,9 @@ async def staff_workload(db: AsyncSession, *, limit: int = 10) -> list[tuple]:
 
 
 async def bookings_by_status_in_range(db: AsyncSession, *, start: datetime, end: datetime) -> list[tuple]:
-    booking_status = func.coalesce(ServiceRequest.details["booking_status"].astext, "pending_review")
     result = await db.execute(
-        select(booking_status, func.count())
-        .where(
-            ServiceRequest.request_type == BOOKING_REQUEST_TYPE,
-            ServiceRequest.created_at >= start,
-            ServiceRequest.created_at <= end,
-        )
-        .group_by(booking_status)
+        select(RoomBooking.status, func.count())
+        .where(RoomBooking.created_at >= start, RoomBooking.created_at <= end)
+        .group_by(RoomBooking.status)
     )
     return result.all()

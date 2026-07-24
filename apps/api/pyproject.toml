@@ -32,6 +32,8 @@ dependencies = [
     "tiktoken>=0.8,<1.0",            # token-aware chunking
     "redis>=5.2,<6.0",               # ingestion queue / locks / progress
     "python-multipart>=0.0.12,<1.0", # required by FastAPI for multipart file-upload endpoints
+    # --- Phase 7: Room Booking ---
+    "twilio>=9.3,<10.0",              # SMS confirmation to guest on staff booking confirmation
 ]
 
 [dependency-groups]

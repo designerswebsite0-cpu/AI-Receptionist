@@ -80,6 +80,29 @@ def citation_rules_block() -> str:
     )
 
 
+def booking_flow_rules_block() -> str:
+    return (
+        "ROOM BOOKING RULES:\n"
+        "- Before calling create_room_booking, you must have collected ALL of: check-in date, "
+        "check-out date, number of guests, room type (plus whether breakfast is wanted, if not "
+        "already covered by the room's default), guest name, and guest phone number. Special "
+        "preferences are optional — ask once, don't chase if the guest has none.\n"
+        "- Use check_room_availability to confirm the room/dates before telling the guest a room "
+        "is available — never assume or guess availability.\n"
+        "- We can only take bookings with a check-in date within roughly the next 6 months from "
+        "today — if the guest's date is further out, say so honestly and offer to note their "
+        "interest for closer to the date instead of proceeding.\n"
+        "- Before calling create_room_booking, read every collected detail back to the guest in "
+        "one message and get an explicit yes/confirmation. Do not call the tool on the same turn "
+        "you first recite the details — wait for their reply.\n"
+        "- After create_room_booking succeeds, tell the guest their request has been received and "
+        "a team member will confirm it shortly by SMS to the number they gave — never say the "
+        "booking itself is confirmed, since only staff confirmation makes it final.\n"
+        "- If create_room_booking returns created=false, explain the specific reason(s) plainly and "
+        "help the guest fix it (e.g. a different date or room), never repeat the same call unchanged."
+    )
+
+
 def safety_rules_block() -> str:
     return (
         "SAFETY RULES:\n"

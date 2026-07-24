@@ -4,19 +4,20 @@ approved the call. Every create_*_enquiry handler writes a
 service_requests row (never a fake completed booking/payment/refund);
 read_guest_profile/retrieve_request_status are read-only;
 request_human_assistance both records an enquiry AND signals the pipeline
-to trigger a real handoff.
+to trigger a real handoff. check_room_availability/create_room_booking are
+Phase 7's dedicated room-booking flow (app.bookings) — a separate table
+from service_requests per the 2026-07-24 brief, not another enquiry type.
 """
 
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.bookings import service as bookings_service
 from app.customers.service import get_customer_or_404
-from app.notifications.service import notify
 from app.orchestration import repository, service
 
 _ENQUIRY_REQUEST_TYPES = {
-    "create_booking_enquiry": "booking_enquiry",
     "create_dining_enquiry": "dining_enquiry",
     "create_spa_enquiry": "spa_enquiry",
     "create_activity_enquiry": "activity_enquiry",
@@ -37,17 +38,41 @@ async def _handle_enquiry(
         created_by="ai",
         actor_user_id=actor_user_id,
     )
-    if request_type == "booking_enquiry":
-        check_in = tool_input.get("check_in_date")
-        await notify(
-            db,
-            notification_type="booking_enquiry_received",
-            title="New room booking enquiry",
-            body=f"Check-in: {check_in}" if check_in else None,
-            resource_type="service_request",
-            resource_id=str(request.id),
-        )
     return {"service_request_id": str(request.id), "status": request.status, "request_type": request.request_type}
+
+
+async def _handle_check_room_availability(
+    db: AsyncSession, *, tool_input: dict, conversation_id: uuid.UUID, customer_id: uuid.UUID,
+    actor_user_id: uuid.UUID | None,
+) -> dict:
+    return await bookings_service.check_availability(
+        db,
+        room_type=tool_input.get("room_type", ""),
+        check_in_date=tool_input.get("check_in_date", ""),
+        check_out_date=tool_input.get("check_out_date", ""),
+    )
+
+
+async def _handle_create_room_booking(
+    db: AsyncSession, *, tool_input: dict, conversation_id: uuid.UUID, customer_id: uuid.UUID,
+    actor_user_id: uuid.UUID | None,
+) -> dict:
+    result = await bookings_service.submit_booking_enquiry(
+        db,
+        conversation_id=conversation_id,
+        customer_id=customer_id,
+        check_in_date=tool_input.get("check_in_date", ""),
+        check_out_date=tool_input.get("check_out_date", ""),
+        num_guests=tool_input.get("num_guests"),
+        room_type=tool_input.get("room_type", ""),
+        guest_name=tool_input.get("guest_name", ""),
+        guest_phone=tool_input.get("guest_phone", ""),
+        breakfast_included=tool_input.get("breakfast_included"),
+        special_preferences=tool_input.get("special_preferences"),
+    )
+    if not result.created:
+        return {"created": False, "reasons": result.reasons}
+    return {"created": True, "booking_id": str(result.booking_id), "status": result.status}
 
 
 async def _handle_read_guest_profile(
@@ -151,6 +176,8 @@ async def execute_tool(
         "record_complaint": _handle_record_complaint,
         "request_human_assistance": _handle_request_human_assistance,
         "retrieve_request_status": _handle_retrieve_request_status,
+        "check_room_availability": _handle_check_room_availability,
+        "create_room_booking": _handle_create_room_booking,
     }.get(tool_name)
 
     if handler is None:

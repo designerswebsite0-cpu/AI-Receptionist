@@ -1,6 +1,8 @@
 """Typed tool registry. No tool here ever claims a booking/payment/refund
-succeeded — create_*_enquiry tools only ever write a service_requests row
-(app.orchestration.service.create_service_request), per
+succeeded — create_*_enquiry tools write a service_requests row
+(app.orchestration.service.create_service_request), and create_room_booking
+writes a room_bookings row (app.bookings.service.submit_booking_enquiry) —
+both start in a pending/review state only staff can move forward, per
 docs/phase-4/PHASE_4_IMPLEMENTATION_PLAN.md §2/§8's "safe enquiry record,
 not a fake completed operation" rule. `search_resort_knowledge` is
 registered here (so the LLM can request a follow-up lookup) but actually
@@ -94,19 +96,48 @@ register_tool(
 )
 register_tool(
     ToolDefinition(
-        name="create_booking_enquiry",
-        description="Record a room booking enquiry for staff follow-up. Does NOT confirm a booking.",
+        name="check_room_availability",
+        description=(
+            "Check real-time room availability for a specific room category and date range. "
+            "Use this before promising a room is available — never guess."
+        ),
         input_schema={
             "type": "object",
             "properties": {
-                "check_in_date": {"type": "string"},
-                "num_nights": {"type": "integer"},
-                "adults": {"type": "integer"},
-                "room_category": {"type": "string"},
+                "room_type": {"type": "string", "description": "Room category name, e.g. 'Garden Deluxe Room'"},
+                "check_in_date": {"type": "string", "description": "YYYY-MM-DD"},
+                "check_out_date": {"type": "string", "description": "YYYY-MM-DD"},
             },
-            "required": ["check_in_date"],
+            "required": ["room_type", "check_in_date", "check_out_date"],
         },
-        required_fields=("check_in_date",),
+        required_fields=("room_type", "check_in_date", "check_out_date"),
+        permission_level="guest_safe",
+    )
+)
+register_tool(
+    ToolDefinition(
+        name="create_room_booking",
+        description=(
+            "Submit a room booking for staff review — call this ONLY after checking availability, "
+            "collecting every mandatory field, and reading all of them back to the guest for an "
+            "explicit yes. Never confirms a reservation by itself; staff must review and confirm "
+            "in the dashboard before the guest is told the booking is final."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "check_in_date": {"type": "string", "description": "YYYY-MM-DD"},
+                "check_out_date": {"type": "string", "description": "YYYY-MM-DD"},
+                "num_guests": {"type": "integer"},
+                "room_type": {"type": "string"},
+                "breakfast_included": {"type": "boolean"},
+                "guest_name": {"type": "string"},
+                "guest_phone": {"type": "string"},
+                "special_preferences": {"type": "string"},
+            },
+            "required": ["check_in_date", "check_out_date", "num_guests", "room_type", "guest_name", "guest_phone"],
+        },
+        required_fields=("check_in_date", "check_out_date", "num_guests", "room_type", "guest_name", "guest_phone"),
         permission_level="guest_safe",
     )
 )

@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # Import models so they register on Base.metadata for autogenerate support.
 from app.audit.models import AuditLog  # noqa: E402,F401
+from app.bookings.models import RoomBooking, RoomType  # noqa: E402,F401
 from app.config import get_settings  # noqa: E402
 from app.conversations.models import Conversation, ConversationStateEvent  # noqa: E402,F401
 from app.customers.models import Customer, CustomerContact, CustomerNote, CustomerTag  # noqa: E402,F401

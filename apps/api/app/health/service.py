@@ -13,12 +13,11 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.models import AuditLog
+from app.bookings.models import RoomBooking
 from app.config import get_settings
 from app.conversations.models import Conversation
 from app.knowledge.models import KnowledgeSource
 from app.notifications import repository as notifications_repository
-from app.orchestration.models import ServiceRequest
-from app.service_requests.constants import BOOKING_REQUEST_TYPE
 
 
 def _mask(value: str | None) -> str | None:
@@ -110,9 +109,7 @@ async def _domain_signals(db: AsyncSession) -> dict:
 
     pending_bookings = (
         await db.execute(
-            select(func.count())
-            .select_from(ServiceRequest)
-            .where(ServiceRequest.request_type == BOOKING_REQUEST_TYPE, ServiceRequest.status == "open")
+            select(func.count()).select_from(RoomBooking).where(RoomBooking.status == "pending_review")
         )
     ).scalar_one()
 

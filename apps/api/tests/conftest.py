@@ -48,6 +48,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 # audit_logs.actor_user_id -> users.id) purely because nothing else in that
 # run's import graph happened to pull in app.users.models first.
 from app.audit.models import AuditLog  # noqa: F401
+from app.bookings.models import RoomBooking, RoomType  # noqa: F401
 from app.conversations.models import Conversation, ConversationStateEvent  # noqa: F401
 from app.customers.models import Customer, CustomerContact, CustomerNote, CustomerTag  # noqa: F401
 from app.database import Base
